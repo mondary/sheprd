@@ -10,7 +10,8 @@ struct HomeTab: View {
     @Binding var pairing: Bool
 
     var body: some View {
-        ChatList()
+        let sections = HomeRow.sections(sort, chats: model.fleet.chatItems, agents: model.fleet.agentTerminals)
+        ChatList(sections: sections)
             .nearbyBanner()
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { window?.home = true }
@@ -33,6 +34,18 @@ struct HomeTab: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { AgentSortMenu(sort: $sort) }
+                if sections.count > 1 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        let shown = sections.map { ChatList.key($0, sort: sort) }
+                        let folded = model.collapsed.home.allCollapsed(shown)
+                        Button(
+                            folded ? "Expand All" : "Collapse All",
+                            systemImage: folded ? "rectangle.expand.vertical" : "rectangle.compress.vertical"
+                        ) {
+                            withAnimation(.snappy) { model.collapsed.home.toggleAll(shown) }
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Talk to Sheprd", systemImage: "waveform") { model.talk() }
                         .disabled(model.fleet.machines.isEmpty)

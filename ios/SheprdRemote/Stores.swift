@@ -194,19 +194,27 @@ final class TermStore {
     }
 }
 
-/// The computers collapsed in the Workspaces tab, kept on this phone and
-/// shared by its windows.
+/// The computers collapsed in the Workspaces tab and the sections
+/// collapsed on Home, kept on this phone and shared by its windows.
 @MainActor
 @Observable
 final class CollapsedStore {
     private static let key = "collapsedComputers"
 
+    private static let homeKey = "collapsedHomeSections"
+
     var computers: CollapsedComputers {
         didSet { UserDefaults.standard.set(computers.devices.sorted(), forKey: Self.key) }
     }
 
+    /// Home's sections fold as computers do, by `ChatList.key(_:sort:)`.
+    var home: CollapsedComputers {
+        didSet { UserDefaults.standard.set(home.devices.sorted(), forKey: Self.homeKey) }
+    }
+
     init() {
         computers = CollapsedComputers(UserDefaults.standard.stringArray(forKey: Self.key) ?? [])
+        home = CollapsedComputers(UserDefaults.standard.stringArray(forKey: Self.homeKey) ?? [])
     }
 }
 

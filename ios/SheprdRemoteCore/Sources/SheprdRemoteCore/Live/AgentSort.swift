@@ -16,6 +16,9 @@ public enum AgentSort: String, CaseIterable, Identifiable, Sendable {
         public var group: String
         public var groupTitle: String
 
+        /// An unknown status lists as idle.
+        var shownStatus: Home.AgentStatus { status == .unknown ? .idle : status }
+
         public init(status: Home.AgentStatus, date: Date?, title: String, group: String, groupTitle: String) {
             self.status = status
             self.date = date
@@ -30,6 +33,21 @@ public enum AgentSort: String, CaseIterable, Identifiable, Sendable {
         public var id: String
         public var title: String
         public var items: [Item]
+    }
+
+    /// The statuses Home counts and the priority order lists, in order.
+    private static let priorityTitles: [(Home.AgentStatus, String)] =
+        [(.blocked, "Needs you"), (.done, "Done"), (.working, "Working"), (.idle, "Idle")]
+
+    /// How many of `items` have each status, in the priority order, leaving
+    /// out a status none has. The same in every order, so Home's counts do
+    /// not change with it.
+    public static func counts<Item>(of items: [Item], facts: (Item) -> Facts) -> [(status: Home.AgentStatus, count: Int)] {
+        let statuses = items.map { facts($0).shownStatus }
+        return priorityTitles.compactMap { status, _ in
+            let count = statuses.count(where: { $0 == status })
+            return count == 0 ? nil : (status, count)
+        }
     }
 
     /// `items` in this order. Every section lists the newest first, then
@@ -47,9 +65,8 @@ public enum AgentSort: String, CaseIterable, Identifiable, Sendable {
         case .recent:
             return rows.isEmpty ? [] : [Section(id: "recent", title: "Recent", items: rows.map(\.item))]
         case .priority:
-            let titled: [(Home.AgentStatus, String)] = [(.blocked, "Needs you"), (.done, "Done"), (.working, "Working"), (.idle, "Idle")]
-            return titled.compactMap { status, title in
-                let matching = rows.filter { ($0.facts.status == .unknown ? .idle : $0.facts.status) == status }
+            return Self.priorityTitles.compactMap { status, title in
+                let matching = rows.filter { $0.facts.shownStatus == status }
                 return matching.isEmpty ? nil : Section(id: status.rawValue, title: title, items: matching.map(\.item))
             }
         case .workspace:

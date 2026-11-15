@@ -21,6 +21,11 @@ enum HomeRow: Identifiable {
         sort.sections(of: chats.map(HomeRow.chat) + agents.map(HomeRow.agent), facts: \.facts)
     }
 
+    /// How many of `chats` and `agents` have each status.
+    static func counts(chats: [ChatItem], agents: [TerminalItem]) -> [(status: Home.AgentStatus, count: Int)] {
+        AgentSort.counts(of: chats.map(HomeRow.chat) + agents.map(HomeRow.agent), facts: \.facts)
+    }
+
     private var facts: AgentSort.Facts {
         switch self {
         case let .chat(item):
