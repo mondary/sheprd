@@ -244,10 +244,12 @@ mod socket {
                             json!({"value": doc, "version": if doc.is_null() { 0 } else { 1 }})
                         } else {
                             assert!(
-                                name.strip_prefix("sheprd-chat-recovery-")
-                                    .unwrap()
-                                    .parse::<sheprd_chat_protocol::EndpointId>()
-                                    .is_ok()
+                                name.len() <= 32
+                                    && name
+                                        .strip_prefix("sheprd-chat-")
+                                        .unwrap()
+                                        .bytes()
+                                        .all(|byte| byte.is_ascii_hexdigit())
                             );
                             let (value, version) =
                                 recovery_docs.get(name).cloned().unwrap_or((Value::Null, 0));
@@ -257,10 +259,12 @@ mod socket {
                     "doc.set" => {
                         let name = request["params"]["name"].as_str().unwrap();
                         assert!(
-                            name.strip_prefix("sheprd-chat-recovery-")
-                                .unwrap()
-                                .parse::<sheprd_chat_protocol::EndpointId>()
-                                .is_ok()
+                            name.len() <= 32
+                                && name
+                                    .strip_prefix("sheprd-chat-")
+                                    .unwrap()
+                                    .bytes()
+                                    .all(|byte| byte.is_ascii_hexdigit())
                         );
                         let version = recovery_docs.get(name).map_or(0, |(_, version)| *version);
                         assert_eq!(request["params"]["version"], version);

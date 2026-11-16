@@ -69,8 +69,11 @@ pub struct Session {
     pub session: String,
 }
 
+/// herdr-core refuses document names over 32 bytes, so the name keeps the
+/// endpoint's first 20 random hex digits: 12 + 20 = 32. Endpoints are random
+/// UUIDs, so 80 bits keep two chats on one core from sharing a record.
 fn document(endpoint: &EndpointId) -> String {
-    format!("sheprd-chat-recovery-{endpoint}")
+    format!("sheprd-chat-{}", &endpoint.as_str()[..20])
 }
 
 fn read(core: &Core, endpoint: &EndpointId) -> Result<(Option<Record>, u64)> {

@@ -2,6 +2,7 @@ use super::*;
 use crate::tests::{connected, terminal};
 use serde_json::json;
 
+mod document;
 mod races;
 mod switch;
 
