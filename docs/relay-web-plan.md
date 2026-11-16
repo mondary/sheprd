@@ -259,37 +259,65 @@ sessions, refusals, and bytes without names.
   once it is served. Browsers block a public origin from reaching private
   addresses (Private Network Access), so an app installed from the relay
   talks only to the relay, also at home.
-- **Pairing on the web origin**: the QR opens
+- **Pairing on the web origin** (built): the QR opens
   `https://<id>.fra1.sheprd-relay.dev/pair#…` with the pairing secret in
   the fragment, so no server logs it. No CA profile to install. Dual approval
-  and the matching code are unchanged. `/pair` answers only while a QR is
-  live and is a plain 404 otherwise.
-- **Passkeys, required** (`auth/passkey.rs`, `webauthn-rs`):
+  and the matching code are unchanged. On the web origin, `/pair` answers
+  only while a QR is live and is a plain 404 otherwise.
+- **Scope** (built): requests `web_session` serves carry
+  `auth::Scope::Web(host)`; everything else (LAN, Tailscale, a relay's
+  end-to-end tunnel) is `Scope::Network`. A session token works only in the
+  scope it was started in, and `/api/ping` says `"passkey": true` on a web
+  origin, so the page knows to use one.
+- **Passkeys, required** (`auth/passkey.rs`, built): server-side WebAuthn
+  written on `p256` for ES256 alone, rather than `webauthn-rs`, which brings
+  OpenSSL. A bounded CBOR reader takes the attestation object and the COSE
+  key; no attestation is asked for or trusted, whatever its format.
   - The relying party ID is the full hostname, not the registered domain, so
     a passkey for one computer never works for another.
   - Pairing on the web origin registers a passkey (user verification
-    required) before Allow can complete; the desktop dialog says the device
-    will use one.
-  - Access tokens last 10 minutes. A refresh needs a fresh assertion, so a
-    stolen token expires and a stolen refresh is useless without the
-    authenticator.
-  - The device record keeps the credential ID and public key; revoking the
-    device removes them and ends its sessions.
-  - A device paired on the LAN can add a passkey to use the relay origin;
-    without one, the relay origin refuses it.
-- **Certificate Transparency watch** (`relay/web/transparency.rs`): every
-  hour, and after each issuance, the daemon asks a CT search service (Cert
-  Spotter's API by default, configurable) for certificates issued for its
-  own names. A certificate with a public key that is not one of its own:
-  - turns web access off on that relay;
-  - shows an alert in Sheprd and pushes one to paired devices;
-  - stays off until the user turns it on again, after rotating to a new
-    label and key if they choose to.
+    required) before Allow can complete: the claim must carry one whose
+    challenge is SHA-256(`sheprd-passkey-register\0` || pairing token ||
+    device key), so it answers that claim alone without a round trip. The
+    desktop dialog says the device will use one.
+  - Sign-in there needs the device key's signature and an assertion over the
+    same nonce (client data type, challenge, exact origin, not cross-origin;
+    rpIdHash; UP and UV; the DER signature over authenticator data and the
+    client data hash; a counter that moves forward unless it stays at zero,
+    as synced passkeys do). Access tokens last 10 minutes, so a stolen token
+    expires and a stolen refresh is useless without the authenticator.
+  - A device paired there signs in there alone: its device key never opens a
+    session on the network without the passkey. Routes whose keys or tokens
+    would outlast a web token (`POST /api/relay`, host pairing, APNs
+    registration) answer 404 there, and a handoff is redeemed only in the
+    scope it was minted in, so the Home Screen app takes over there too.
+  - The device record keeps the credential ID, public key, web name, and
+    counter; revoking the device removes them and ends its sessions.
+  - A device paired on the LAN does not add a passkey for the relay origin:
+    browsers keep each origin's storage apart, so the web origin holds no
+    key of the LAN pairing anyway. It pairs there as a new device.
+  - A page learns the web origin as this computer's only when it was served
+    there, since it could not sign in at another; addresses sealed to
+    phones and nearby offers keep to the network origins.
+- **Certificate Transparency watch** (`relay/web/transparency.rs`, built):
+  every hour, and after each issuance, the daemon asks a CT search (Cert
+  Spotter's issuances API by default, `--ct-api URL` for another, HTTPS or
+  loopback only) for certificates issued for its own names, wildcards
+  included. A certificate whose public key hash is not one of its own:
+  - turns web access off on that relay: browsers are closed, the origin is
+    no longer admitted, and the listener stops asking for browsers;
+  - shows an alert in Sheprd (`sheprd remote status` and `remote web
+    status`) and pushes a security notice to paired devices;
+  - stays off, kept in `alert.json` beside the relay's web key, until the
+    user turns it on again (control request `ResumeWeb`). Rotating to a new
+    label and key on the way is still to come.
 
   The query names a hostname that CT logs already make public. A failed
-  query is reported in status, never treated as clean.
-- **Hardening on the web origin**: the existing strict CSP (Alpine's CSP
-  build), plus HSTS, `Cross-Origin-Opener-Policy: same-origin`,
+  query, an answer that does not parse, or more pages than are read is
+  reported in status, never treated as clean. The key being ordered counts
+  as this computer's before the CA logs it.
+- **Hardening on the web origin** (built): the existing strict CSP (Alpine's
+  CSP build), plus HSTS, `Cross-Origin-Opener-Policy: same-origin`,
   `Cross-Origin-Resource-Policy: same-origin`, `Referrer-Policy: no-referrer`,
   and no third-party scripts. Unauthenticated routes (`/api/log`, the
   shell, `/pair`) get per-address limits and are reviewed as being on the

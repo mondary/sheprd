@@ -852,9 +852,11 @@ last uses its own domain.
   the app, pairing over a relay, and the relay for intents, notification
   actions, and the share extension, which still go direct.
 - The PWA cannot use this tunnel: a browser cannot run the handshake inside
-  a WebSocket and then treat it as an origin. It keeps LAN and Tailscale
-  until web access through a relay (`docs/relay-web-plan.md`), where the
-  relay routes the browser's own TLS to the computer by name.
+  a WebSocket and then treat it as an origin. On a private relay with web
+  access on (`docs/relay-web-plan.md`), the relay instead routes the
+  browser's own TLS to the computer by name, where devices pair and sign in
+  with a passkey and the computer watches Certificate Transparency for its
+  name; elsewhere the PWA keeps LAN and Tailscale.
 
 ### Sheprd and SSH machines
 

@@ -144,9 +144,11 @@ Both directions are proven, and a person approves on both screens.
 | Computer trusts the phone | A non-extractable WebCrypto P-256 key, created at pairing and kept in IndexedDB, signs a server challenge for every session. |
 | A person agrees | A 6-digit matching code shown on the phone and in the desktop's approval dialog. |
 
-Passkeys (WebAuthn) would be stronger but need a domain as their relying
-party, and this works by IP address. They can come later for users with their
-own certificate and domain.
+Passkeys (WebAuthn) need a domain as their relying party, and this works by
+IP address. On a computer's web address through a private relay, which has
+one, they are required: a device pairs there with a passkey and signs in
+with it, sessions last 10 minutes, and that device signs in nowhere else
+(`docs/relay-web-plan.md`, Passkeys).
 
 1. Sheprd, Remote control > Pair device, shows a QR:
    `https://ADDRESS:PORT/pair#t=TOKEN&fp=CA_SHA256`. The token is 256 random
