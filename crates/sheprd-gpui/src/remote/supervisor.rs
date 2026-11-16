@@ -650,8 +650,12 @@ impl Supervisor {
         cx.global_mut::<Self>().approval = approval;
     }
 
-    /// Takes a status and device list as a poll would have.
-    #[cfg(any(test, feature = "mockup"))]
+    /// Takes a status and device list as a poll would have. Outside tests
+    /// only the macOS native settings capture calls it.
+    #[cfg(any(
+        test,
+        all(feature = "integration-test", feature = "mockup", target_os = "macos")
+    ))]
     pub(crate) fn set_health(cx: &mut App, health: Health, devices: Option<Vec<Device>>) {
         let supervisor = cx.global_mut::<Self>();
         supervisor.health = health;
