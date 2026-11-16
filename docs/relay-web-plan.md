@@ -25,16 +25,17 @@ without decrypting it. Read `AGENTS.md` first; its rules apply throughout.
 | Device sign-in | Pairing as today (QR, dual approval, matching code), plus a **required passkey** per web device. Refreshing a short-lived token needs a passkey assertion. |
 | Mis-issued certificates | The daemon watches Certificate Transparency for its own name and turns web access off when a certificate with another key appears. |
 | Default | Off. The user turns web access on in Sheprd, per computer, and confirms that it puts the computer's sign-in page on the internet. |
+| Which relays | **Private relays only, for now**: a relay offers web access only when it runs its TCP front and requires listen tokens, so only its operator's computers can serve pages under its name. A public relay refuses the switch (`forbidden`), and its `/v1/info` says `"web": false`. On DigitalOcean, `RELAY_PRIVATE=1 create-droplet.sh REGION` makes one; App Platform cannot, since it ends TLS itself. |
 
 ### Still open
 
 1. **Web access on Sheprd's public relays.** Anyone can listen on a public
    relay, so anyone could serve a page of their choosing at a name under
    our domain: free HTTPS hosting, and phishing pages that harm the
-   domain's reputation. The relay cannot see or filter that content. The
-   recommendation is to ship web access on private relays first, then on
-   ours with a per-relay `web = off | token | open` setting, a route deny
-   list for abuse reports, per-route bandwidth caps, and an abuse contact.
+   domain's reputation. The relay cannot see or filter that content, which
+   is why web access is on private relays only for now (Decisions). Opening
+   it on ours would need a route deny list for abuse reports, per-route
+   bandwidth caps, and an abuse contact first.
 2. **Public Suffix List entries** for each relay host, once usage justifies
    them (Domain, below).
 

@@ -4,11 +4,12 @@
 
 use super::{front_hello::real_hello, signing_key};
 use crate::{
-    Limits, RouteId, WebLabel,
+    Limits, RouteId, WebLabel, broker,
     front::{self, Config},
     hub::{Accepted, Access, Caller, DialRefusal, Hub, Registration},
     serve::capped::Capped,
     splice::Peer,
+    wire::{Message, Status},
 };
 use axum::{body::Bytes, serve::Listener as _};
 use std::{
@@ -43,8 +44,10 @@ async fn front(hub: &Arc<Hub>) -> SocketAddr {
     address
 }
 
+/// A private relay's hub, running its front: one that offers web access.
 fn hub(limits: Limits) -> Arc<Hub> {
-    Arc::new(Hub::new(limits, Access::Open))
+    let access = Access::tokens("a listen token long enough").unwrap();
+    Arc::new(Hub::new(limits, access).with_web(true))
 }
 
 /// A listener on the route of key `seed`, with web access on.
@@ -195,4 +198,30 @@ fn a_route_holds_at_most_its_web_limit() {
     // A device's dial still has room on the route.
     drop(first);
     assert!(matches!(hub.dial_web(label, HOME), Ok(Ok(_))));
+}
+
+#[test]
+fn only_a_private_relay_with_a_front_offers_web_access() {
+    let public = Arc::new(Hub::new(Limits::default(), Access::Open).with_web(true));
+    let private = Access::tokens("a listen token long enough").unwrap();
+    let frontless = Arc::new(Hub::new(Limits::default(), private).with_web(false));
+    for hub in [public, frontless] {
+        assert!(!hub.offers_web());
+        let route = RouteId::of(signing_key(5).verifying_key());
+        let registration = hub.register(route, HOME).unwrap();
+        assert_eq!(
+            broker::apply(&hub, &registration, Message::Web(true)),
+            Status::Forbidden
+        );
+        assert!(!registration.set_web(true));
+        // Turning it off is always fine: there is nothing to end.
+        assert_eq!(
+            broker::apply(&hub, &registration, Message::Web(false)),
+            Status::Ok
+        );
+        assert!(matches!(
+            hub.dial_web(WebLabel::of(&route), HOME),
+            Ok(Err(DialRefusal::Offline))
+        ));
+    }
 }

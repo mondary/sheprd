@@ -39,7 +39,9 @@ Every option is optional, and each can also be set as a RELAY_* variable
   --front ADDRESS|off            The TCP front for port 443: routes TLS by server
                                  name without ending it, so browsers reach
                                  computers that turned web access on; needs
-                                 --public-host (default off)
+                                 --public-host (default off). Web access is
+                                 offered only on a private relay, one with
+                                 listen tokens
   --front-upstream HOST:PORT     Where the front sends the relay's own name: the
                                  HTTPS server in front of --listen, which must
                                  accept PROXY protocol v2 (caddy:8443)

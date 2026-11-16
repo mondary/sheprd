@@ -10,6 +10,9 @@
 #   RELAY_DOMAIN_SUFFIX  e.g. relay.example.org gives nyc3.relay.example.org;
 #                  point those names at the droplets yourself. Without it,
 #                  each relay is served at IP.sslip.io.
+#   RELAY_PRIVATE  1 for a private relay: only computers given its listen
+#                  token (in the droplet's login file) may listen. Only a
+#                  private relay offers web access to the phone app.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -33,6 +36,7 @@ for region in "$@"; do
   sed -e "s|__COMPOSE_B64__|$compose|" \
       -e "s|__CADDYFILE_B64__|$caddyfile|" \
       -e "s|__RELAY_DOMAIN__|$domain|" \
+      -e "s|__RELAY_PRIVATE__|${RELAY_PRIVATE:-}|" \
       "$here/cloud-init.yml" > "$data"
   keys=()
   if [ -n "${RELAY_SSH_KEYS:-}" ]; then
@@ -52,7 +56,7 @@ done
 
 cat <<'NOTE'
 
-Each droplet starts its relay within a few minutes. The dashboard login is in
-/root/sheprd-relay-login.txt on each droplet (`doctl compute ssh NAME`, or the
-web console). Without RELAY_DOMAIN_SUFFIX the address is IP-with-dashes.sslip.io.
+Each droplet starts its relay within a few minutes. The dashboard login, and
+with RELAY_PRIVATE=1 the listen token, are in /root/sheprd-relay-login.txt on
+each droplet (`doctl compute ssh NAME`, or the web console). Without RELAY_DOMAIN_SUFFIX the address is IP-with-dashes.sslip.io.
 NOTE

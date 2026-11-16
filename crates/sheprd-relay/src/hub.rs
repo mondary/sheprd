@@ -67,6 +67,8 @@ pub struct Hub {
     state: Mutex<State>,
     /// One throttle each way, as `total_bandwidth` promises.
     total: [Option<Throttle>; 2],
+    /// Whether listeners may turn web access on ([`Hub::with_web`]).
+    web: bool,
 }
 
 #[derive(Debug, Default)]
@@ -258,7 +260,25 @@ impl Hub {
                 Throttle::new(limits.total_bandwidth),
                 Throttle::new(limits.total_bandwidth),
             ],
+            web: false,
         }
+    }
+
+    /// Offers web access when the relay runs its TCP front (`front`) and
+    /// is private: only listeners holding the operator's listen tokens
+    /// may listen. A public relay offers none for now, since anyone could
+    /// otherwise serve pages of their own under its name
+    /// (`docs/relay-web-plan.md`, Still open).
+    #[must_use]
+    pub fn with_web(mut self, front: bool) -> Self {
+        self.web = front && self.access.requires_token();
+        self
+    }
+
+    /// Whether listeners may turn web access on.
+    #[must_use]
+    pub const fn offers_web(&self) -> bool {
+        self.web
     }
 
     fn state(&self) -> MutexGuard<'_, State> {

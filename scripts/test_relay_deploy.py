@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLOUD_INIT = os.path.join(ROOT, "deploy", "relay", "cloud-init.yml")
 
 
-def rendered(domain: str) -> str:
+def rendered(domain: str, private: str = "") -> str:
     """cloud-init.yml after create-droplet.sh's sed substitution."""
     with open(CLOUD_INIT, encoding="utf-8") as file:
         text = file.read()
@@ -22,7 +22,22 @@ def rendered(domain: str) -> str:
         text.replace("__COMPOSE_B64__", "Y29tcG9zZQ==")
         .replace("__CADDYFILE_B64__", "Y2FkZHk=")
         .replace("__RELAY_DOMAIN__", domain)
+        .replace("__RELAY_PRIVATE__", private)
     )
+
+
+def first_env(text: str) -> tuple[str, str]:
+    """Runs start.sh's first-boot secrets in an empty directory, with the
+    login file there instead of /root, and returns .env and the login."""
+    block = re.search(r'\n(\s*)private="[^"\n]*"\n\1if \[ ! -f \.env \]; then\n.*?\n\1fi\n', text, re.S)
+    assert block, "start.sh's first-boot block is missing"
+    with tempfile.TemporaryDirectory() as directory:
+        login = os.path.join(directory, "login.txt")
+        script = "\n".join(line.strip() for line in block.group(0).splitlines())
+        script = 'domain=relay.example.org\n' + script.replace("/root/sheprd-relay-login.txt", login)
+        subprocess.run(["sh", "-c", script], cwd=directory, check=True)
+        with open(os.path.join(directory, ".env"), encoding="utf-8") as env, open(login, encoding="utf-8") as text:
+            return env.read(), text.read()
 
 
 def chosen_domain(text: str) -> str:
@@ -169,6 +184,23 @@ class DomainTest(unittest.TestCase):
     def test_an_unfilled_placeholder_falls_back_to_sslip(self) -> None:
         with open(CLOUD_INIT, encoding="utf-8") as file:
             self.assertEqual(chosen_domain(file.read()), "203-0-113-7.sslip.io")
+
+
+class PrivateTest(unittest.TestCase):
+    def test_a_private_relay_gets_a_listen_token(self) -> None:
+        env, login = first_env(rendered("", "1"))
+        token = re.search(r"^RELAY_LISTEN_TOKEN=(\S{40,})$", env, re.M)
+        self.assertIsNotNone(token)
+        self.assertIn(f"listen token: {token.group(1)}", login)
+        self.assertIn("RELAY_DASHBOARD_TOKEN=", env)
+
+    def test_relays_are_public_unless_asked(self) -> None:
+        for text in (rendered(""), rendered("", "0")):
+            env, login = first_env(text)
+            self.assertNotIn("RELAY_LISTEN_TOKEN", env)
+            self.assertNotIn("listen token", login)
+        with open(CLOUD_INIT, encoding="utf-8") as file:
+            self.assertNotIn("RELAY_LISTEN_TOKEN", first_env(file.read())[0])
 
 
 if __name__ == "__main__":

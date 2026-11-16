@@ -91,6 +91,7 @@ pub fn apply(hub: &Arc<Hub>, registration: &Registration, message: Message) -> S
                 Status::TooMany
             }
         }
+        Message::Web(true) if !hub.offers_web() => Status::Forbidden,
         Message::Web(on) => {
             if registration.set_web(on) {
                 Status::Ok

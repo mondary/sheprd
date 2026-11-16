@@ -9,9 +9,13 @@ use std::{net::IpAddr, sync::Arc};
 
 impl Hub {
     /// Turns web access on or off for `route`'s listener `generation`.
-    /// Off ends the route's web sessions. `false` when the listener is
-    /// gone or another route already holds the same label.
+    /// Off ends the route's web sessions. `false` when the relay offers no
+    /// web access, the listener is gone, or another route already holds
+    /// the same label.
     pub(super) fn set_web(&self, route: RouteId, generation: u64, on: bool) -> bool {
+        if on && !self.web {
+            return false;
+        }
         let label = WebLabel::of(&route);
         let mut state = self.state();
         let taken = state.web.get(&label).is_some_and(|held| *held != route);
@@ -51,6 +55,9 @@ impl Hub {
         label: WebLabel,
         dialer: IpAddr,
     ) -> crate::Result<Result<Waiting, DialRefusal>> {
+        if !self.web {
+            return Ok(Err(DialRefusal::Offline));
+        }
         let session = SessionId::random()?;
         let mut state = self.state();
         let Some(route) = state.web.get(&label).copied() else {

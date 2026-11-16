@@ -152,7 +152,7 @@ told what the outside looks like. Each deploy sets these for you:
 | `RELAY_QUIC_PORT` | The UDP port clients reach QUIC on, when a mapping changes it | `443` (published to the container's 8443) | QUIC is off |
 | `RELAY_QUIC_IDENTITY_DIR` | Where QUIC's certificate is kept, so its pin survives restarts and can be listed in Sheprd's signed relay list | `/quic`, from `/opt/sheprd-relay/quic` | QUIC is off |
 | `RELAY_PUBLIC_HOST` | The name clients use, which WebSocket proofs must cover | `RELAY_DOMAIN` | `${APP_DOMAIN}` |
-| `RELAY_FRONT` | The TCP front: routes TLS by server name without ending it, so computers' web names reach them (`docs/relay-web-plan.md`) | `0.0.0.0:8444`, published on TCP 443 | off: the platform ends TLS |
+| `RELAY_FRONT` | The TCP front: routes TLS by server name without ending it, so computers' web names reach them (`docs/relay-web-plan.md`); web access is offered only on a private relay, with `RELAY_LISTEN_TOKEN` or `RELAY_LISTEN_TOKEN_FILE` | `0.0.0.0:8444`, published on TCP 443 | off: the platform ends TLS |
 | `RELAY_FRONT_UPSTREAM` | Where the front sends the relay's own name, with a PROXY v2 header | `caddy:443` | not set |
 | `RELAY_BEHIND_PROXY` | Take callers' addresses from the last entry of the last `X-Forwarded-For` line; only behind a proxy that appends to that header or replaces it, as Caddy does | `1` (Caddy) | not set |
 | `RELAY_CLIENT_IP_HEADER` | Take them from this header instead | not set | `do-connecting-ip` |
@@ -214,7 +214,10 @@ hears "offline". When a computer disconnects, its keys go with it, and the
 relay keeps nothing on disk.
 
 To keep a relay to your own computers, you may set `RELAY_LISTEN_TOKEN`
-(16+ characters) and give it to them. It is off by default, and dialers
+(16+ characters) and give it to them; on DigitalOcean,
+`RELAY_PRIVATE=1 deploy/relay/create-droplet.sh REGION` makes one and puts
+the token in the droplet's login file. Only such a private relay offers
+web access to the phone app (`docs/relay-web-plan.md`). It is off by default, and dialers
 never need it. To give each person or machine its own, so one can be
 revoked alone, put them in a file instead, one per line, and point
 `RELAY_LISTEN_TOKEN_FILE` at it:

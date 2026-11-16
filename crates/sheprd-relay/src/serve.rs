@@ -46,13 +46,14 @@ const MIN_TOKEN: usize = 16;
 /// The relay's HTTP routes and, with a token, the dashboard. `quic` is
 /// what `/v1/info` says about QUIC.
 pub fn app(options: &Options, quic: Option<QuicInfo>) -> Result<(Router, Arc<Hub>)> {
-    let hub = Arc::new(Hub::new(options.limits, access(options)?));
+    let hub =
+        Arc::new(Hub::new(options.limits, access(options)?).with_web(options.front.is_some()));
     let shared = Shared {
         hub: Arc::clone(&hub),
         public_host: options.public_host.as_deref().map(Arc::from),
         quic,
         source: source(options),
-        web: options.front.is_some(),
+        web: hub.offers_web(),
     };
     let mut router = web::router(shared.clone());
     if let Some(token) = &options.dashboard_token {
@@ -362,6 +363,9 @@ async fn start_front(address: SocketAddr, options: &Options, hub: &Arc<Hub>) -> 
         .ok_or(front::Error::NoHost)?;
     if options.front_upstream.is_none() {
         tracing::warn!("the front has no upstream: the relay's own name is refused on it");
+    }
+    if !hub.offers_web() {
+        tracing::info!("web access is off: it needs a private relay, with listen tokens");
     }
     let config = front::Config {
         relay_host: Arc::from(relay_host),
