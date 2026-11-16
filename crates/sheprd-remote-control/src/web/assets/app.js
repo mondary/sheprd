@@ -282,51 +282,57 @@ async function signIn() {
   }
   const pair = app.device && (await loadKey(app.device));
   if (!pair) throw new HttpError(403, "This phone is not paired.");
-  const challenge = await (
-    await call("/api/session/challenge", { method: "POST", body: { device: app.device.id }, auth: false })
-  ).json();
-  const nonce = fromB64url(challenge.nonce);
-  const message = new Uint8Array([...new TextEncoder().encode(SIGN_PREFIX), ...nonce]);
-  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, message);
-  // A web address through a relay names this device's passkey there, which
-  // must sign the same nonce.
-  const passkey = challenge.passkey ? await passkeyAssertion(challenge.passkey, nonce) : undefined;
+  // A challenge from the daemon, signed with the device key. A web address
+  // through a relay also names this device's passkey there, which must sign
+  // the same nonce.
+  const fresh = async () => {
+    const challenge = await (
+      await call("/api/session/challenge", { method: "POST", body: { device: app.device.id }, auth: false })
+    ).json();
+    const nonce = fromB64url(challenge.nonce);
+    const message = new Uint8Array([...new TextEncoder().encode(SIGN_PREFIX), ...nonce]);
+    const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, message);
+    return { id: challenge.challenge, signature: b64url(signature), nonce, credential: challenge.passkey };
+  };
+  let attempt = await fresh();
+  let passkey;
+  let tapped = false;
+  if (attempt.credential) {
+    try {
+      passkey = await passkeyAssertion(attempt.credential, attempt.nonce);
+    } catch (error) {
+      // Browsers may refuse to ask without a tap: the page asks for one.
+      if (error?.name !== "NotAllowedError") throw error;
+      ({ attempt, passkey } = await tapForPasskey(fresh));
+      tapped = true;
+    }
+  }
   const session = await (
     await call("/api/session", {
       method: "POST",
-      body: { challenge: challenge.challenge, signature: b64url(signature), passkey },
+      body: { challenge: attempt.id, signature: attempt.signature, passkey },
       auth: false,
     })
   ).json();
   app.session = { token: session.token, expires: session.expires_ms, origin: app.origin, device: app.device.id };
   writeJson(sessionStorage, TOKEN, app.session);
   rememberOrigins(session.origins);
+  // The view the passkey prompt replaced draws again, now signed in, and
+  // only now, so it cannot start another sign-in.
+  if (tapped) setTimeout(() => route(), 0);
 }
 
-/// The passkey `credential`'s assertion over `nonce`, as the daemon reads
-/// it. Browsers may refuse to ask without a tap, so when the first try is
-/// not allowed, the page asks for one and tries again from it; the view
-/// shown before comes back once signed in.
+/// The passkey `credential`'s assertion over `nonce`, as the daemon reads it.
 async function passkeyAssertion(credential, nonce) {
-  const ask = () =>
-    navigator.credentials.get({
-      publicKey: {
-        challenge: nonce,
-        rpId: location.hostname,
-        allowCredentials: [{ type: "public-key", id: fromB64url(credential) }],
-        userVerification: "required",
-        timeout: 60_000,
-      },
-    });
-  let used;
-  try {
-    used = await ask();
-  } catch (error) {
-    if (error?.name !== "NotAllowedError") throw error;
-    used = await tapForPasskey(ask);
-    // The view the sign-in interrupted draws again, now signed in.
-    setTimeout(() => route(), 0);
-  }
+  const used = await navigator.credentials.get({
+    publicKey: {
+      challenge: nonce,
+      rpId: location.hostname,
+      allowCredentials: [{ type: "public-key", id: fromB64url(credential) }],
+      userVerification: "required",
+      timeout: 60_000,
+    },
+  });
   return {
     client_data: b64url(used.response.clientDataJSON),
     authenticator_data: b64url(used.response.authenticatorData),
@@ -334,19 +340,42 @@ async function passkeyAssertion(credential, nonce) {
   };
 }
 
-/// Shows the passkey prompt and resolves with `ask`'s answer once the
-/// person taps it; a cancelled try leaves the prompt for another.
-function tapForPasskey(ask) {
+/// How long a challenge is used for a tap: the daemon's last 60 seconds.
+const CHALLENGE_FRESH_MS = 45_000;
+
+/// Shows the passkey prompt and resolves with a signed challenge and its
+/// passkey assertion once the person taps it. Each try signs a challenge
+/// fetched ahead of the tap and replaced before it expires, so the tap
+/// itself starts the prompt, which browsers require, and a retry is never
+/// refused as expired; a cancelled try leaves the prompt for another.
+function tapForPasskey(fresh) {
   show("t-passkey");
   const button = view().querySelector("[data-passkey]");
   const state = view().querySelector("[data-state]");
+  let ready;
+  let fetched = 0;
+  const renew = () => {
+    fetched = Date.now();
+    ready = fresh();
+    ready.catch(() => {});
+  };
+  renew();
+  const timer = setInterval(renew, CHALLENGE_FRESH_MS);
   return new Promise((resolve) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       state.textContent = "";
-      // Called from the tap itself, which browsers require.
-      ask().then(resolve, (error) => {
+      if (Date.now() - fetched >= CHALLENGE_FRESH_MS) renew();
+      const pending = ready;
+      try {
+        const attempt = await pending;
+        const passkey = await passkeyAssertion(attempt.credential, attempt.nonce);
+        clearInterval(timer);
+        resolve({ attempt, passkey });
+      } catch (error) {
+        // A used or failed challenge is not offered again.
+        if (ready === pending) renew();
         state.textContent = error?.name === "NotAllowedError" ? "The passkey was not used. Try again." : `${error?.message || error}`;
-      });
+      }
     });
   });
 }
