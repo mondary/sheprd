@@ -301,6 +301,8 @@ impl SettingsWindow {
         let description = match (private, relay.web, status) {
             (false, _, _) => fl!("settings-remote-web-needs-token"),
             (true, false, _) => fl!("settings-remote-web-off"),
+            // On in the config, but the daemon keeps it off until resumed.
+            (true, true, _) if alert => fl!("settings-remote-web-alerted"),
             (true, true, Some(WebStatus { url: Some(_), .. })) => {
                 fl!("settings-remote-web-on")
             }
@@ -546,6 +548,7 @@ impl SettingsWindow {
                     transparency_line(&status.transparency, now),
                 ))
             });
+        // After an alert, the address is off: no code invites a phone to it.
         let card = div()
             .debug_selector(move || format!("remote-relay-{index}-web-details"))
             .flex()
@@ -553,19 +556,21 @@ impl SettingsWindow {
             .gap(px(8.))
             .my(px(6.))
             .children(alert_block)
-            .child(
-                div()
-                    .row()
-                    .items_start()
-                    .gap(px(12.))
-                    .children(qr.map(|qr| {
-                        div()
-                            .debug_selector(move || format!("remote-relay-{index}-web-qr"))
-                            .flex_none()
-                            .child(crate::remote::qr_square(qr, QR_SIDE))
-                    }))
-                    .child(text),
-            );
+            .when(!alert, |card| {
+                card.child(
+                    div()
+                        .row()
+                        .items_start()
+                        .gap(px(12.))
+                        .children(qr.map(|qr| {
+                            div()
+                                .debug_selector(move || format!("remote-relay-{index}-web-qr"))
+                                .flex_none()
+                                .child(crate::remote::qr_square(qr, QR_SIDE))
+                        }))
+                        .child(text),
+                )
+            });
         crate::motion::pop_in(
             card,
             ElementId::Name(format!("remote-relay-{index}-web-details").into()),

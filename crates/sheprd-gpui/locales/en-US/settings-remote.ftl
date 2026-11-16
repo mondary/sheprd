@@ -84,6 +84,7 @@ settings-remote-web = Web access
 settings-remote-web-needs-token = Needs the relay's listen token file.
 settings-remote-web-off = Lets browsers open this computer's sign-in page through this relay. Turning it on asks first.
 settings-remote-web-on = On. Browsers reach this computer's sign-in page at its web address.
+settings-remote-web-alerted = Off after a Certificate Transparency alert, until you turn it on again.
 settings-remote-web-starting = On. Waiting for the daemon to report the web address.
 settings-remote-web-url = Web address: { $url }
 settings-remote-web-expires = { $days ->

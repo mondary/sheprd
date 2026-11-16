@@ -164,6 +164,9 @@ fn the_page_shows_the_address_its_code_and_an_alert(cx: &mut TestAppContext) {
     });
     with_relay(&view, cx, relay(true, true), Some(alert));
     assert!(cx.debug_bounds("remote-relay-0-web-alert").is_some());
+    // The address is off: no code or address invites a phone to it.
+    assert!(cx.debug_bounds("remote-relay-0-web-qr").is_none());
+    assert!(cx.debug_bounds("remote-relay-0-web-url").is_none());
     click(cx, "remote-relay-0-web-resume");
     assert!(cx.debug_bounds("remote-relay-0-web-ask").is_some());
     click(cx, "remote-relay-0-web-confirm");
