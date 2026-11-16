@@ -42,6 +42,8 @@ const LEAST_WAIT: Duration = Duration::from_secs(60);
 #[derive(Clone, Debug)]
 pub(crate) struct Serving {
     pub(crate) config: Arc<ServerConfig>,
+    /// The web name, `<label>.<relay host>`.
+    pub(crate) host: String,
     /// `https://<web name>`, the origin the app runs at there.
     pub(crate) origin: String,
 }
@@ -129,6 +131,7 @@ fn serving(issued: &Issued, key: &KeyPair, host: &str) -> Result<Serving, Error>
     config.alpn_protocols = vec![b"http/1.1".to_vec()];
     Ok(Serving {
         config: Arc::new(config),
+        host: host.to_owned(),
         origin: format!("https://{host}"),
     })
 }

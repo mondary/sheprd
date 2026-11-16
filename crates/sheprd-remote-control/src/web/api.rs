@@ -8,7 +8,7 @@ use super::{
     render::{now_ms, urlencode},
 };
 use crate::{
-    auth::{ChallengeId, ClaimId},
+    auth::{ChallengeId, ClaimId, Scope, passkey},
     control::{DeviceId, PairingState},
     push::Subscription,
 };
@@ -40,8 +40,16 @@ pub(super) async fn with_auth<T: Send + 'static>(
 
 /// Says which computer answers, by its certificate's fingerprint: an
 /// address a phone saved may belong to another computer on another network.
-pub(super) async fn ping(State(state): State<Shared>) -> Json<Value> {
-    Json(json!({ "ok": true, "computer": state.computer, "fingerprint": state.fingerprint }))
+///
+/// `passkey` says that a device pairs and signs in here with a passkey:
+/// this is a web name through a relay.
+pub(super) async fn ping(State(state): State<Shared>, scope: Scope) -> Json<Value> {
+    Json(json!({
+        "ok": true,
+        "computer": state.computer,
+        "fingerprint": state.fingerprint,
+        "passkey": scope.web_host().is_some(),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -53,6 +61,10 @@ pub(super) struct ClaimRequest {
     /// relays: stored with the device when approved.
     #[serde(default)]
     relay: Option<RelayKeysRequest>,
+    /// The passkey the phone made for this claim, which a claim on a web
+    /// origin must carry.
+    #[serde(default)]
+    passkey: Option<passkey::Registration>,
 }
 
 #[derive(Deserialize)]
@@ -64,9 +76,15 @@ pub(super) struct RelayKeysRequest {
 /// A claim from an app installed from another computer carries that app's
 /// origin, which approving the claim admits; a claim from this computer's
 /// own page carries none.
+///
+/// On a web origin, the claim must carry a passkey made there, with
+/// person verification, for the challenge [`passkey::register_challenge`]
+/// derives from the token and the device key: the device signs in there
+/// with it.
 pub(super) async fn claim(
     State(state): State<Shared>,
     ConnectInfo(Peer(peer)): ConnectInfo<Peer>,
+    scope: Scope,
     headers: HeaderMap,
     Json(request): Json<ClaimRequest>,
 ) -> Result<Json<Value>, ApiError> {
@@ -80,6 +98,15 @@ pub(super) async fn claim(
         .map(|origin| app_origin(origin).ok_or(ApiError::Invalid("the app's origin is not valid")))
         .transpose()?;
     let claim = with_auth(&state, move |auth| {
+        let passkey = match scope.web_host() {
+            Some(host) => Some(claim_passkey(
+                host,
+                request.token.expose_secret(),
+                &request.public_key,
+                request.passkey.as_ref(),
+            )?),
+            None => None,
+        };
         let claim = auth.claim(
             peer.ip(),
             request.token.expose_secret(),
@@ -89,6 +116,9 @@ pub(super) async fn claim(
         )?;
         if let Some(app) = app {
             auth.claimed_from(&claim.id, app);
+        }
+        if let Some(passkey) = passkey {
+            auth.claimed_passkey(&claim.id, passkey);
         }
         if let Some(relay) = request.relay {
             let keys = crate::auth::devices::RelayKeys {
@@ -111,6 +141,22 @@ pub(super) async fn claim(
     })))
 }
 
+/// The passkey a claim on the web name `host` made: checked before the
+/// token is spent, so a claim without one leaves the pairing open.
+fn claim_passkey(
+    host: &str,
+    token: &str,
+    public_key: &str,
+    registration: Option<&passkey::Registration>,
+) -> Result<passkey::Passkey, ApiError> {
+    let registration = registration.ok_or(crate::auth::Error::from(passkey::Error::Required))?;
+    let token: [u8; 32] =
+        crate::auth::decode_fixed(token).map_err(|_| crate::auth::Error::InvalidToken)?;
+    let public_key = crate::auth::PublicKey::parse(public_key)?;
+    let challenge = passkey::register_challenge(&token, public_key.as_bytes());
+    Ok(passkey::register(host, &challenge, registration).map_err(crate::auth::Error::from)?)
+}
+
 /// `origin` when it is an `https://` origin as a browser sends it: a host
 /// and an optional port, nothing more, at most 255 bytes.
 pub(super) fn app_origin(origin: &str) -> Option<String> {
@@ -125,6 +171,7 @@ pub(super) fn app_origin(origin: &str) -> Option<String> {
 
 pub(super) async fn claim_status(
     State(state): State<Shared>,
+    scope: Scope,
     Path(claim): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let pairing = with_auth(&state, move |auth| {
@@ -135,7 +182,7 @@ pub(super) async fn claim_status(
         PairingState::Approved { device } => json!({
             "state": "approved",
             "device": device.0,
-            "origins": state.origins(),
+            "origins": state.origins_for(&scope),
             "fingerprint": state.fingerprint,
             "computer": state.computer,
         }),
@@ -168,6 +215,7 @@ pub(super) struct RedeemRequest {
 pub(super) async fn redeem(
     State(state): State<Shared>,
     ConnectInfo(Peer(peer)): ConnectInfo<Peer>,
+    scope: Scope,
     Json(request): Json<RedeemRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let device = with_auth(&state, move |auth| {
@@ -181,7 +229,7 @@ pub(super) async fn redeem(
     .await?;
     Ok(Json(json!({
         "device": device.0,
-        "origins": state.origins(),
+        "origins": state.origins_for(&scope),
         "fingerprint": state.fingerprint,
         "computer": state.computer,
     })))
@@ -192,19 +240,23 @@ pub(super) struct ChallengeRequest {
     device: String,
 }
 
+/// A challenge to sign; on a web origin, it names the device's passkey
+/// there, which must sign it too.
 pub(super) async fn challenge(
     State(state): State<Shared>,
     ConnectInfo(Peer(peer)): ConnectInfo<Peer>,
+    scope: Scope,
     Json(request): Json<ChallengeRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let challenge = with_auth(&state, move |auth| {
-        Ok(auth.challenge(peer.ip(), &DeviceId(request.device), now_ms())?)
+        Ok(auth.challenge_in(peer.ip(), &DeviceId(request.device), scope, now_ms())?)
     })
     .await?;
     Ok(Json(json!({
         "challenge": challenge.id.0,
         "nonce": challenge.nonce,
         "expires_ms": challenge.expires_ms,
+        "passkey": challenge.passkey,
     })))
 }
 
@@ -212,16 +264,23 @@ pub(super) async fn challenge(
 pub(super) struct SessionRequest {
     challenge: String,
     signature: String,
+    /// The passkey's assertion over the nonce, which a web origin needs.
+    #[serde(default)]
+    passkey: Option<passkey::Assertion>,
 }
 
 pub(super) async fn session(
     State(state): State<Shared>,
+    scope: Scope,
     Json(request): Json<SessionRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    let origins = state.origins_for(&scope);
     let session = with_auth(&state, move |auth| {
-        Ok(auth.verify(
+        Ok(auth.verify_in(
             &ChallengeId(request.challenge),
             &request.signature,
+            &scope,
+            request.passkey.as_ref(),
             now_ms(),
         )?)
     })
@@ -231,14 +290,18 @@ pub(super) async fn session(
     Ok(Json(json!({
         "token": session.token.expose_secret(),
         "expires_ms": session.expires_ms,
-        "origins": state.origins(),
+        "origins": origins,
     })))
 }
 
 /// The addresses served now, for a phone that signed in earlier: networks
 /// change while a session lasts, and its saved list must follow them.
-pub(super) async fn origins(State(state): State<Shared>, _device: Device) -> Json<Value> {
-    Json(json!({ "origins": state.origins() }))
+pub(super) async fn origins(
+    State(state): State<Shared>,
+    _device: Device,
+    scope: Scope,
+) -> Json<Value> {
+    Json(json!({ "origins": state.origins_for(&scope) }))
 }
 
 pub(super) async fn command(

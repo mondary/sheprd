@@ -18,6 +18,9 @@ const MAX_ORIGINS = 16;
 const PUSH_HOST = "herdr.push-host";
 const TOKEN = "herdr.session"; // { token, expires, origin, device }
 const SIGN_PREFIX = "herdr-remote-session\0";
+/// What a passkey's registration challenge hashes before the pairing token
+/// and the device key (`auth::passkey::REGISTER_PREFIX`).
+const PASSKEY_PREFIX = "sheprd-passkey-register\0";
 const INSTALL_CLOSED = "herdr.install-closed"; // true once the footer is closed
 /// How long the row a list was left for stays marked; `.came-from` in input.css.
 const MARK_MS = 1600;
@@ -282,18 +285,106 @@ async function signIn() {
   const challenge = await (
     await call("/api/session/challenge", { method: "POST", body: { device: app.device.id }, auth: false })
   ).json();
-  const message = new Uint8Array([...new TextEncoder().encode(SIGN_PREFIX), ...fromB64url(challenge.nonce)]);
+  const nonce = fromB64url(challenge.nonce);
+  const message = new Uint8Array([...new TextEncoder().encode(SIGN_PREFIX), ...nonce]);
   const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, message);
+  // A web address through a relay names this device's passkey there, which
+  // must sign the same nonce.
+  const passkey = challenge.passkey ? await passkeyAssertion(challenge.passkey, nonce) : undefined;
   const session = await (
     await call("/api/session", {
       method: "POST",
-      body: { challenge: challenge.challenge, signature: b64url(signature) },
+      body: { challenge: challenge.challenge, signature: b64url(signature), passkey },
       auth: false,
     })
   ).json();
   app.session = { token: session.token, expires: session.expires_ms, origin: app.origin, device: app.device.id };
   writeJson(sessionStorage, TOKEN, app.session);
   rememberOrigins(session.origins);
+}
+
+/// The passkey `credential`'s assertion over `nonce`, as the daemon reads
+/// it. Browsers may refuse to ask without a tap, so when the first try is
+/// not allowed, the page asks for one and tries again from it; the view
+/// shown before comes back once signed in.
+async function passkeyAssertion(credential, nonce) {
+  const ask = () =>
+    navigator.credentials.get({
+      publicKey: {
+        challenge: nonce,
+        rpId: location.hostname,
+        allowCredentials: [{ type: "public-key", id: fromB64url(credential) }],
+        userVerification: "required",
+        timeout: 60_000,
+      },
+    });
+  let used;
+  try {
+    used = await ask();
+  } catch (error) {
+    if (error?.name !== "NotAllowedError") throw error;
+    used = await tapForPasskey(ask);
+    // The view the sign-in interrupted draws again, now signed in.
+    setTimeout(() => route(), 0);
+  }
+  return {
+    client_data: b64url(used.response.clientDataJSON),
+    authenticator_data: b64url(used.response.authenticatorData),
+    signature: b64url(used.response.signature),
+  };
+}
+
+/// Shows the passkey prompt and resolves with `ask`'s answer once the
+/// person taps it; a cancelled try leaves the prompt for another.
+function tapForPasskey(ask) {
+  show("t-passkey");
+  const button = view().querySelector("[data-passkey]");
+  const state = view().querySelector("[data-state]");
+  return new Promise((resolve) => {
+    button.addEventListener("click", () => {
+      state.textContent = "";
+      // Called from the tap itself, which browsers require.
+      ask().then(resolve, (error) => {
+        state.textContent = error?.name === "NotAllowedError" ? "The passkey was not used. Try again." : `${error?.message || error}`;
+      });
+    });
+  });
+}
+
+/// A passkey for this page's address, made for a claim of `token` with
+/// `publicKey`: its challenge is the one the daemon derives from both, so
+/// it answers this claim alone. Made from a tap, which browsers require.
+async function createPasskey(token, publicKey) {
+  const challenge = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new Uint8Array([...new TextEncoder().encode(PASSKEY_PREFIX), ...fromB64url(token), ...new Uint8Array(publicKey)]),
+    ),
+  );
+  const button = view().querySelector("[data-passkey]");
+  const state = view().querySelector("[data-state]");
+  state.textContent = "This address is open to the internet, so this device signs in with a passkey.";
+  button.hidden = false;
+  const made = await new Promise((resolve, reject) => {
+    button.addEventListener("click", () => {
+      navigator.credentials
+        .create({
+          publicKey: {
+            rp: { id: location.hostname, name: "Sheprd" },
+            user: { id: crypto.getRandomValues(new Uint8Array(16)), name: deviceName(), displayName: deviceName() },
+            challenge,
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+            authenticatorSelection: { userVerification: "required", residentKey: "preferred" },
+            attestation: "none",
+            timeout: 60_000,
+          },
+        })
+        .then(resolve, reject);
+    });
+  });
+  button.hidden = true;
+  state.textContent = "Pairing…";
+  return { client_data: b64url(made.response.clientDataJSON), attestation: b64url(made.response.attestationObject) };
 }
 
 /// Saves the addresses served now on every connect, not only at sign-in: a
@@ -1398,12 +1489,18 @@ async function pair(link, scanned = false) {
   try {
     const pairKey = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
     const publicKey = await crypto.subtle.exportKey("raw", pairKey.publicKey);
+    // A web address through a relay pairs with a passkey, made on that
+    // address alone: a page elsewhere cannot make one for it.
+    const ping = await (await call("/api/ping", { auth: false, origin })).json();
+    if (ping.passkey && !here) throw new Error("Open this code with the camera to pair through its web address.");
+    const passkey = ping.passkey ? await createPasskey(params.get("t"), publicKey) : undefined;
+    if (left()) return;
     const claim = await (
       await call("/api/pair/claim", {
         method: "POST",
         auth: false,
         origin,
-        body: { token: params.get("t"), name: deviceName(), public_key: b64url(publicKey) },
+        body: { token: params.get("t"), name: deviceName(), public_key: b64url(publicKey), passkey },
       })
     ).json();
     if (left()) return;

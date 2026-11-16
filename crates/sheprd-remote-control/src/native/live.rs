@@ -120,12 +120,13 @@ impl Views {
 pub(crate) async fn run(
     state: Shared,
     token: SecretString,
+    scope: crate::auth::Scope,
     device: DeviceId,
     mut inbound: mpsc::Receiver<ClientMessage>,
     outbound: Outbound,
 ) {
     let mut views = Views::default();
-    let lost = access_lost(&state, token.expose_secret(), &device);
+    let lost = access_lost(&state, token.expose_secret(), &scope, &device);
     tokio::pin!(lost);
     loop {
         tokio::select! {
@@ -234,7 +235,12 @@ fn handle(
 
 /// Returns once `token` no longer signs `device` in: revoked when the
 /// device is gone, expired otherwise.
-async fn access_lost(state: &Shared, token: &str, device: &DeviceId) -> ByeReason {
+async fn access_lost(
+    state: &Shared,
+    token: &str,
+    scope: &crate::auth::Scope,
+    device: &DeviceId,
+) -> ByeReason {
     let mut revocations = state.auth().watch_revocations();
     let mut check = tokio::time::interval(ACCESS_CHECK);
     loop {
@@ -245,7 +251,7 @@ async fn access_lost(state: &Shared, token: &str, device: &DeviceId) -> ByeReaso
             },
         }
         let mut auth = state.auth();
-        if auth.authenticate(token, now_ms()).is_none() {
+        if auth.authenticate_in(token, scope, now_ms()).is_none() {
             return if auth.devices().get(device).is_some() {
                 ByeReason::Expired
             } else {

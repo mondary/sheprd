@@ -33,6 +33,15 @@
   <div class="grid place-items-center min-h-dvh text-muted">Connecting…</div>
 </template>
 
+<template id="t-passkey">
+  <div class="flex flex-col items-center justify-center gap-3 min-h-dvh text-center px-6">
+    <p class="text-lg font-semibold">Sign in with your passkey</p>
+    <p class="text-muted text-sm">This address is open to the internet, so your computer asks for this device's passkey to sign in.</p>
+    <button type="button" class="btn btn-primary max-w-60" data-passkey>Use passkey</button>
+    <p class="text-muted text-sm" data-state></p>
+  </div>
+</template>
+
 <template id="t-offline">
   <div class="flex flex-col items-center justify-center gap-3 min-h-dvh text-center px-6">
     <p class="text-lg font-semibold">Can't reach your computer</p>
@@ -58,6 +67,7 @@
     <p class="text-muted">Check that this code matches the one Sheprd shows, then choose Allow there.</p>
     <div class="font-mono font-bold text-[38px] tracking-widest px-5 py-4 bg-surface rounded-2xl min-w-48 min-h-[78px]" data-code></div>
     <p class="text-muted text-sm" data-state>Pairing…</p>
+    <button type="button" class="btn btn-primary max-w-60" data-passkey hidden>Create a passkey</button>
     <a href="/computers" data-nav class="btn btn-subtle max-w-60" data-approve-back hidden>Back to computers</a>
     <div class="group-list w-full mt-6 text-left" data-trust hidden>
       <div class="row flex-col items-start gap-1">

@@ -307,9 +307,10 @@ impl SheprdWindow {
                 device_name,
                 code,
                 app,
+                passkey,
                 answer,
                 ..
-            } => self.pairing_claim(device_name, code, app.as_deref(), *answer, cx),
+            } => self.pairing_claim(device_name, code, (app.as_deref(), *passkey), *answer, cx),
             Phase::Approved { device_name } => self.pairing_message(
                 &fl!("remote-pair-approved", device = name(device_name)),
                 &fl!("remote-pair-approved-detail"),
@@ -508,7 +509,7 @@ impl SheprdWindow {
         &self,
         device_name: &str,
         code: &str,
-        app: Option<&str>,
+        (app, passkey): (Option<&str>, bool),
         answer: Option<Answer>,
         cx: &mut Context<Self>,
     ) -> Div {
@@ -545,6 +546,16 @@ impl SheprdWindow {
                             "remote-pair-app",
                             app = crate::notifications::safe_text(app, 255)
                         )),
+                )
+            })
+            // Claimed at a web name through a relay: the device signs in
+            // there with a passkey, so the user knows to expect one.
+            .when(passkey, |claim| {
+                claim.child(
+                    div()
+                        .debug_selector(|| "remote-pair-passkey".into())
+                        .text_color(rgb(theme.subtext()))
+                        .child(fl!("remote-pair-passkey")),
                 )
             })
             .child(

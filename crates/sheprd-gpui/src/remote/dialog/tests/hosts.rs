@@ -17,6 +17,7 @@ fn claimed_daemon(_: &Path, request: &Request) -> Result<Response, control::Erro
             device_name: "iPhone".into(),
             code: "428913".into(),
             app: None,
+            passkey: false,
         }),
         Request::Approve { allow: true, .. } => Response::Pairing(PairingState::Approved {
             device: DeviceId("d1".into()),

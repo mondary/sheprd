@@ -132,7 +132,7 @@ pub(crate) fn answer(state: &State, stop: &watch::Sender<bool>, request: Request
             .nearby_start(None, &public_key, &state.computer, &state.fingerprint, now)
             .map(Response::NearbyStarted),
         Request::NearbyReveal { session, nonce } => {
-            let origins = state.origins();
+            let origins = state.network_origins();
             let revealed = {
                 let mut auth = state.auth();
                 crate::relay::refresh_offer(state.relay.as_deref(), &mut auth);
@@ -200,7 +200,7 @@ pub(crate) fn answer(state: &State, stop: &watch::Sender<bool>, request: Request
                 device,
                 computer: state.computer.clone(),
                 fingerprint: state.fingerprint.clone(),
-                origins: state.origins(),
+                origins: state.network_origins(),
             })
         }),
         Request::Revoke { device } => match state.auth().revoke(&device) {
@@ -350,7 +350,7 @@ fn sealed_addresses(state: &State, device: &DeviceId) -> Option<String> {
     );
     let key = registration.notify_key.as_ref()?.key().to_owned();
     let plaintext = serde_json::to_vec(&Addresses {
-        origins: state.origins(),
+        origins: state.network_origins(),
     })
     .ok()?;
     let sealed =

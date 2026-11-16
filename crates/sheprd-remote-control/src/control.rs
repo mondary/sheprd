@@ -475,6 +475,10 @@ pub enum PairingState {
         /// computer's API, so the dialog names it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         app: Option<String>,
+        /// Whether it claimed at a web name through a relay, with a
+        /// passkey it will sign in with there, which the dialog says.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        passkey: bool,
     },
     Approved {
         device: DeviceId,

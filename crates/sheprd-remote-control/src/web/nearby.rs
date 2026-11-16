@@ -56,7 +56,7 @@ pub(super) async fn reveal(
 ) -> Result<Json<NearbyRevealed>, ApiError> {
     let shared = state.clone();
     let revealed = with_auth(&state, move |auth| {
-        let origins = shared.origins();
+        let origins = shared.network_origins();
         crate::relay::refresh_offer(shared.relay.as_deref(), auth);
         Ok(auth.nearby_reveal(
             &request.session,

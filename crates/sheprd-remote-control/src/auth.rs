@@ -14,6 +14,7 @@ mod limits;
 pub(crate) mod links;
 pub(crate) mod nearby;
 mod pairing;
+pub(crate) mod passkey;
 pub(crate) mod presence;
 mod session;
 
@@ -23,6 +24,8 @@ pub(crate) use limits::RateLimiter;
 pub(crate) use nearby::NearbySessions;
 pub(crate) use pairing::{Claim, ClaimId, NewDevice, Pairings};
 pub(crate) use presence::Presences;
+#[cfg(test)]
+pub(crate) use session::WEB_SESSION_TTL_MS;
 pub(crate) use session::{Challenge, ChallengeId, Session, Sessions};
 
 use crate::control::{
@@ -78,6 +81,8 @@ pub enum Error {
     NoPairing,
     #[error("the pairing is not waiting for an answer")]
     NotClaimed,
+    #[error(transparent)]
+    Passkey(#[from] passkey::Error),
     #[error("could not draw random bytes")]
     Random(#[source] getrandom::Error),
     #[error("too many requests; try again shortly")]
@@ -254,6 +259,29 @@ pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         .zip(right)
         .fold(0u8, |difference, (left, right)| difference | (left ^ right));
     std::hint::black_box(difference) == 0
+}
+
+/// Where a request reached this computer, which decides how its device
+/// signs in: on the network (LAN, Tailscale, or a relay's end-to-end
+/// tunnel) with its device key, or on a web origin through a relay, whose
+/// pages any browser can open, with its device key and a passkey for that
+/// origin's host.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) enum Scope {
+    #[default]
+    Network,
+    /// The web name, `<label>.<relay host>`, the request was served at.
+    Web(String),
+}
+
+impl Scope {
+    /// The web name, when on one.
+    pub(crate) fn web_host(&self) -> Option<&str> {
+        match self {
+            Self::Network => None,
+            Self::Web(host) => Some(host),
+        }
+    }
 }
 
 /// Rate limits the server applies per client address.
@@ -489,6 +517,11 @@ impl Auth {
         self.pairings.claimed_from(claim, origin);
     }
 
+    /// Keeps the passkey the phone made with `claim` on a web origin.
+    pub(crate) fn claimed_passkey(&mut self, claim: &ClaimId, passkey: passkey::Passkey) {
+        self.pairings.claimed_passkey(claim, passkey);
+    }
+
     /// Keeps the relay keys the phone sent with `claim`.
     pub(crate) fn claimed_relay(&mut self, claim: &ClaimId, keys: devices::RelayKeys) {
         self.pairings.claimed_relay(claim, keys);
@@ -540,34 +573,87 @@ impl Auth {
         self.pairings.state(id, now_ms)
     }
 
+    #[cfg(test)]
     pub(crate) fn challenge(
         &mut self,
         client: IpAddr,
         device: &DeviceId,
         now_ms: u64,
     ) -> Result<Challenge> {
+        self.challenge_in(client, device, Scope::Network, now_ms)
+    }
+
+    /// A challenge for `device` to answer in `scope`.
+    pub(crate) fn challenge_in(
+        &mut self,
+        client: IpAddr,
+        device: &DeviceId,
+        scope: Scope,
+        now_ms: u64,
+    ) -> Result<Challenge> {
         if !self.challenge_limit.allow(client, now_ms) {
             return Err(Error::RateLimited);
         }
-        self.sessions.challenge(device, now_ms, &self.devices)
+        self.sessions
+            .challenge(device, scope, now_ms, &self.devices)
     }
 
     /// Checks a signed challenge, starts a session, and marks the device seen.
+    #[cfg(test)]
     pub(crate) fn verify(
         &mut self,
         challenge: &ChallengeId,
         signature: &str,
         now_ms: u64,
     ) -> Result<Session> {
-        let session = self
+        self.verify_in(challenge, signature, &Scope::Network, None, now_ms)
+    }
+
+    /// Checks a challenge answered in `scope`, signed by the device's key
+    /// and, on a web origin, by its passkey there; starts a session there
+    /// and marks the device seen.
+    pub(crate) fn verify_in(
+        &mut self,
+        challenge: &ChallengeId,
+        signature: &str,
+        scope: &Scope,
+        assertion: Option<&passkey::Assertion>,
+        now_ms: u64,
+    ) -> Result<Session> {
+        let pending = self
             .sessions
-            .verify(challenge, signature, now_ms, &self.devices)?;
+            .take(challenge, signature, scope, now_ms, &self.devices)?;
+        if let Some(host) = scope.web_host() {
+            let assertion = assertion.ok_or(passkey::Error::Required)?;
+            let record = self
+                .devices
+                .get(&pending.device)
+                .ok_or(Error::UnknownDevice)?;
+            let stored = record
+                .passkey
+                .as_ref()
+                .ok_or(passkey::Error::NotRegistered)?;
+            let count = passkey::verify(stored, host, &pending.nonce, assertion)?;
+            self.devices.set_sign_count(&pending.device, count)?;
+        }
+        let session = self.sessions.start(pending.device, scope.clone(), now_ms)?;
         self.devices.touch(&session.device, now_ms)?;
         Ok(session)
     }
 
+    #[cfg(test)]
     pub(crate) fn authenticate(&mut self, bearer: &str, now_ms: u64) -> Option<DeviceId> {
-        self.sessions.authenticate(bearer, now_ms)
+        self.authenticate_in(bearer, &Scope::Network, now_ms)
+    }
+
+    /// The device a bearer token started in `scope` belongs to.
+    pub(crate) fn authenticate_in(
+        &mut self,
+        bearer: &str,
+        scope: &Scope,
+        now_ms: u64,
+    ) -> Option<DeviceId> {
+        self.sessions.authenticate(bearer, scope, now_ms)
     }
 
     /// A token that moves `device`'s access into its Home Screen app.
@@ -700,6 +786,7 @@ impl Auth {
                 app: None,
                 id: id.clone(),
                 name,
+                passkey: None,
                 public_key,
                 relay: None,
             },

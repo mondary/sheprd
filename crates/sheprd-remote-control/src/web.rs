@@ -140,15 +140,34 @@ impl State {
     /// addresses, then its web names on relays, so a page served at one
     /// learns that it belongs to this computer.
     pub(crate) fn origins(&self) -> Vec<String> {
-        let mut origins = self
-            .names
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .origins(self.port);
+        let mut origins = self.network_origins();
         if let Some(relay) = &self.relay {
             origins.extend(relay.web_origins());
         }
         origins
+    }
+
+    /// The origins a page reached in `scope` is told about: the network
+    /// ones, and the web name it was served at, if any. A page never
+    /// learns another web name, where it could not sign in: a passkey
+    /// works only on the name it was made for.
+    pub(crate) fn origins_for(&self, scope: &auth::Scope) -> Vec<String> {
+        let mut origins = self.network_origins();
+        if let Some(host) = scope.web_host() {
+            origins.push(format!("https://{host}"));
+        }
+        origins
+    }
+
+    /// The origins at this computer's network addresses, which an
+    /// installed app may keep sending after they change. Web names on
+    /// relays are left out: they are admitted only while served, so
+    /// turning web access off takes them back at once.
+    pub(crate) fn network_origins(&self) -> Vec<String> {
+        self.names
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .origins(self.port)
     }
 
     /// Whether `origin` may call the API: one served now or before, or an
@@ -192,7 +211,7 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/new-chat", get(assets::shell))
         .route("/checks/{workspace}", get(assets::shell))
         .route("/checks/{workspace}/{job}", get(assets::shell))
-        .route("/pair", get(assets::shell))
+        .route("/pair", get(assets::pair))
         .route("/settings", get(assets::shell))
         .route("/term/{pane}", get(assets::shell))
         .route("/sw.js", get(assets::service_worker))
@@ -311,10 +330,32 @@ pub(crate) fn router(state: Shared) -> Router {
 /// The page's CSP allows only this origin's scripts and styles, pictures
 /// from itself and inline `data:` (chat images), and calls to the
 /// computer's other origins.
+///
+/// On a web origin, open to the internet, pages also may not be framed or
+/// opened by other sites' windows, nor loaded by them, and browsers keep
+/// to HTTPS there for a year.
 async fn security_headers(request: Request, next: Next) -> Response {
     let api = request.uri().path().starts_with("/api/") || request.uri().path().starts_with("/f/");
+    let web = request
+        .extensions()
+        .get::<auth::Scope>()
+        .is_some_and(|scope| scope.web_host().is_some());
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
+    if web {
+        headers.insert(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000"),
+        );
+        headers.insert(
+            header::HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        );
+        headers.insert(
+            header::HeaderName::from_static("cross-origin-resource-policy"),
+            HeaderValue::from_static("same-origin"),
+        );
+    }
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(
@@ -417,11 +458,30 @@ impl FromRequestParts<Shared> for Device {
 
     async fn from_request_parts(parts: &mut Parts, state: &Shared) -> Result<Self, ApiError> {
         let token = bearer(&parts.headers).ok_or(ApiError::Unauthorized)?;
+        let scope = scope(parts);
         state
             .auth()
-            .authenticate(token, now_ms())
+            .authenticate_in(token, &scope, now_ms())
             .map(Device)
             .ok_or(ApiError::Unauthorized)
+    }
+}
+
+/// Where a request reached this computer: the web origin it was served at
+/// through a relay, as `relay::serve` marks it, or else the network.
+pub(crate) fn scope(parts: &Parts) -> auth::Scope {
+    parts
+        .extensions
+        .get::<auth::Scope>()
+        .cloned()
+        .unwrap_or_default()
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for auth::Scope {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(scope(parts))
     }
 }
 

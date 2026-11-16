@@ -37,6 +37,9 @@ pub enum Phase {
         code: String,
         /// `PairingState::Claimed::app`: another computer's app claimed it.
         app: Option<String>,
+        /// `PairingState::Claimed::passkey`: it claimed at a web name with
+        /// a passkey.
+        passkey: bool,
         /// The answer given, once sent: `Some(true)` waits for the daemon
         /// to report the device approved.
         answer: Option<Answer>,
@@ -290,12 +293,14 @@ impl Pairing {
                     device_name,
                     code,
                     app,
+                    passkey,
                 },
             ) => Phase::Claimed {
                 offer,
                 device_name,
                 code,
                 app,
+                passkey,
                 answer: None,
             },
             (Phase::Claimed { device_name, .. }, PairingState::Approved { .. }) => {

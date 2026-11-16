@@ -50,6 +50,7 @@ fn new_device(seed: u8, name: &str) -> NewDevice {
         app: None,
         id: DeviceId(format!("device-{seed}")),
         name: name.to_owned(),
+        passkey: None,
         public_key: PublicKey::parse(&public_key(&signing_key(seed))).unwrap(),
         relay: None,
     }

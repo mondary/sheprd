@@ -2,7 +2,8 @@
 //! a bearer token. Only the token's SHA-256 is kept.
 
 use super::{
-    Devices, Error, Result, SECRET_LEN, decode_fixed, encode, random_bytes, random_id, sha256,
+    Devices, Error, Result, SECRET_LEN, Scope, decode_fixed, encode, passkey, random_bytes,
+    random_id, sha256,
 };
 use crate::control::DeviceId;
 use p256::ecdsa::{Signature, signature::Verifier};
@@ -14,6 +15,9 @@ use std::collections::HashMap;
 pub(crate) const CHALLENGE_TTL_MS: u64 = 60_000;
 /// How long a session's bearer token is accepted.
 pub(crate) const SESSION_TTL_MS: u64 = 12 * 60 * 60 * 1000;
+/// How long one started on a web origin is: a stolen token soon expires,
+/// and the next needs the passkey again.
+pub(crate) const WEB_SESSION_TTL_MS: u64 = 10 * 60 * 1000;
 /// Unanswered challenges kept per device; a new one evicts the oldest.
 pub(crate) const MAX_CHALLENGES_PER_DEVICE: usize = 8;
 /// Sessions kept per device; a new one ends the oldest.
@@ -35,6 +39,10 @@ pub(crate) struct Challenge {
     /// 32 random bytes, base64url.
     pub(crate) nonce: String,
     pub(crate) expires_ms: u64,
+    /// On a web origin, the credential ID of the device's passkey there,
+    /// for the browser to ask it for an assertion over the nonce.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) passkey: Option<String>,
 }
 
 /// A started session. The token is shown once, to the device.
@@ -46,12 +54,15 @@ pub(crate) struct Session {
     pub(crate) expires_ms: u64,
 }
 
+/// A challenge taken to be answered.
 #[derive(Debug)]
-struct Pending {
-    device: DeviceId,
-    nonce: [u8; SECRET_LEN],
+pub(crate) struct Pending {
+    pub(crate) device: DeviceId,
+    pub(crate) nonce: [u8; SECRET_LEN],
     issued_ms: u64,
     expires_ms: u64,
+    /// Where it was issued; it is answered there or not at all.
+    pub(crate) scope: Scope,
 }
 
 #[derive(Debug)]
@@ -59,6 +70,9 @@ struct Live {
     device: DeviceId,
     issued_ms: u64,
     expires_ms: u64,
+    /// Where it was started; its token works there alone, so a token
+    /// from the network is no use on a web origin, which wants a passkey.
+    scope: Scope,
 }
 
 #[derive(Debug, Default)]
@@ -69,16 +83,28 @@ pub(crate) struct Sessions {
 }
 
 impl Sessions {
-    /// Issues a single-use challenge to a paired device.
+    /// Issues a single-use challenge to a paired device, answerable in
+    /// `scope`. On a web origin, the device must have a passkey there.
     pub(crate) fn challenge(
         &mut self,
         device: &DeviceId,
+        scope: Scope,
         now_ms: u64,
         devices: &Devices,
     ) -> Result<Challenge> {
-        if devices.get(device).is_none() {
-            return Err(Error::UnknownDevice);
-        }
+        let record = devices.get(device).ok_or(Error::UnknownDevice)?;
+        let passkey = match &scope {
+            Scope::Network => None,
+            Scope::Web(host) => Some(
+                record
+                    .passkey
+                    .as_ref()
+                    .filter(|passkey| &passkey.host == host)
+                    .ok_or(passkey::Error::NotRegistered)?
+                    .id
+                    .clone(),
+            ),
+        };
         self.challenges
             .retain(|_, pending| pending.expires_ms > now_ms);
         let outstanding = self
@@ -102,28 +128,31 @@ impl Sessions {
                 nonce,
                 issued_ms: now_ms,
                 expires_ms,
+                scope,
             },
         );
         Ok(Challenge {
             id,
             nonce: encode(&nonce),
             expires_ms,
+            passkey,
         })
     }
 
-    /// Checks the device's signature over the challenge and starts a
-    /// session. The challenge is used up whatever the outcome.
-    pub(crate) fn verify(
+    /// Takes a live challenge issued in `scope` and checks the device's
+    /// signature over it. The challenge is used up whatever the outcome.
+    pub(crate) fn take(
         &mut self,
         challenge: &ChallengeId,
         signature: &str,
+        scope: &Scope,
         now_ms: u64,
         devices: &Devices,
-    ) -> Result<Session> {
+    ) -> Result<Pending> {
         let pending = self
             .challenges
             .remove(challenge)
-            .filter(|pending| pending.expires_ms > now_ms)
+            .filter(|pending| pending.expires_ms > now_ms && &pending.scope == scope)
             .ok_or(Error::UnknownChallenge)?;
         let signature: [u8; SIGNATURE_LEN] =
             decode_fixed(signature).map_err(|_| Error::InvalidSignature)?;
@@ -135,11 +164,17 @@ impl Sessions {
             .verifying_key()?;
         key.verify(&signed_message(&pending.nonce), &signature)
             .map_err(|_| Error::InvalidSignature)?;
-        self.start(pending.device, now_ms)
+        Ok(pending)
     }
 
-    /// The device a bearer token belongs to, while its session lasts.
-    pub(crate) fn authenticate(&mut self, bearer: &str, now_ms: u64) -> Option<DeviceId> {
+    /// The device a bearer token belongs to, while its session lasts and
+    /// only in the scope it was started in.
+    pub(crate) fn authenticate(
+        &mut self,
+        bearer: &str,
+        scope: &Scope,
+        now_ms: u64,
+    ) -> Option<DeviceId> {
         let token: [u8; SECRET_LEN] = decode_fixed(bearer).ok()?;
         let digest = sha256(&[&token]);
         let live = self.sessions.get(&digest)?;
@@ -147,7 +182,7 @@ impl Sessions {
             self.sessions.remove(&digest);
             return None;
         }
-        Some(live.device.clone())
+        (&live.scope == scope).then(|| live.device.clone())
     }
 
     /// Ends every session and drops every challenge of a device.
@@ -157,7 +192,8 @@ impl Sessions {
             .retain(|_, pending| &pending.device != device);
     }
 
-    fn start(&mut self, device: DeviceId, now_ms: u64) -> Result<Session> {
+    /// Starts a session for `device` in `scope`.
+    pub(crate) fn start(&mut self, device: DeviceId, scope: Scope, now_ms: u64) -> Result<Session> {
         self.sessions.retain(|_, live| live.expires_ms > now_ms);
         let owned = self
             .sessions
@@ -171,13 +207,18 @@ impl Sessions {
             self.sessions.remove(&oldest);
         }
         let token = random_bytes::<SECRET_LEN>()?;
-        let expires_ms = now_ms.saturating_add(SESSION_TTL_MS);
+        let ttl = match scope {
+            Scope::Network => SESSION_TTL_MS,
+            Scope::Web(_) => WEB_SESSION_TTL_MS,
+        };
+        let expires_ms = now_ms.saturating_add(ttl);
         self.sessions.insert(
             sha256(&[&token]),
             Live {
                 device: device.clone(),
                 issued_ms: now_ms,
                 expires_ms,
+                scope,
             },
         );
         Ok(Session {

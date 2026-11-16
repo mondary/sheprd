@@ -30,6 +30,7 @@ mod new_terminal;
 mod origins;
 mod pace;
 mod pairing;
+mod passkey;
 mod presence;
 mod pull_requests;
 mod rename;

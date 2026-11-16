@@ -50,6 +50,10 @@ pub(crate) struct DeviceRecord {
     /// it sent them (`POST /api/relay`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) relay: Option<RelayKeys>,
+    /// The passkey it signs in with on this computer's web origin, made
+    /// when it paired there; revoking the device removes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) passkey: Option<super::passkey::Passkey>,
 }
 
 /// A device's keys for relays, as it sent them, base64url: its tunnel
@@ -162,6 +166,7 @@ impl Devices {
             via,
             links,
             relay: device.relay,
+            passkey: device.passkey,
         });
         self.save_or_undo(|devices| {
             devices.records.pop();
@@ -271,6 +276,29 @@ impl Devices {
         self.save_or_undo(move |devices| {
             if let Some(record) = devices.records.iter_mut().find(|record| record.id == id) {
                 (record.public_key, record.push) = old;
+            }
+        })
+    }
+
+    /// Keeps the counter of a device's passkey after a sign-in, writing the
+    /// store only when it moved: passkeys that sync stay at zero. Blocking
+    /// when it writes.
+    pub(crate) fn set_sign_count(&mut self, id: &DeviceId, count: u32) -> Result<()> {
+        let record = self.record_mut(id)?;
+        let Some(passkey) = record.passkey.as_mut() else {
+            return Ok(());
+        };
+        if passkey.sign_count == count {
+            return Ok(());
+        }
+        let previous = std::mem::replace(&mut passkey.sign_count, count);
+        let id = id.clone();
+        self.save_or_undo(move |devices| {
+            if let Ok(Some(passkey)) = devices
+                .record_mut(&id)
+                .map(|record| record.passkey.as_mut())
+            {
+                passkey.sign_count = previous;
             }
         })
     }

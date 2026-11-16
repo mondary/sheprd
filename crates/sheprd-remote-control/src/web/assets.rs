@@ -99,6 +99,20 @@ pub(super) async fn shell(Query(query): Query<HandoffQuery>) -> Response {
         .into_response()
 }
 
+/// `/pair`: the shell, but on a web name, open to the internet, only while
+/// the desktop's pairing dialog shows a code no phone claimed yet; a plain
+/// 404 otherwise, so a scan finds nothing to try.
+pub(super) async fn pair(
+    State(state): State<Shared>,
+    scope: crate::auth::Scope,
+    query: Query<HandoffQuery>,
+) -> Response {
+    if scope.web_host().is_some() && !state.auth().pairing_open(super::now_ms()) {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    shell(query).await
+}
+
 /// The icon iOS asks for at the root when a page links none.
 pub(super) async fn touch_icon() -> Response {
     file("image/png", TOUCH_ICON, "no-cache")

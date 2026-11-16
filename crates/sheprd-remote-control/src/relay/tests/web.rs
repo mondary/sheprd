@@ -212,6 +212,9 @@ async fn a_browser_reaches_the_app_through_a_private_relays_front() {
     // A page served there learns that the origin is this computer's, as
     // pairing and sign-in tell it, so a Home Screen app takes over.
     assert!(shared.origins().contains(&origin), "{:?}", shared.origins());
+    // It is never remembered as an address an app may keep using, so
+    // turning web access off takes it back.
+    assert!(!shared.network_origins().contains(&origin));
 
     // A browser trusting the same CA, at the web name, through the front.
     let client = rustls::ClientConfig::builder_with_provider(Arc::new(

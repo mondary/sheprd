@@ -119,8 +119,13 @@ pub(super) async fn new_chat(
     Ok(Html(render::new_chat(workspace).into_string()))
 }
 
-pub(super) async fn settings(State(state): State<Shared>, _device: Device) -> Html<String> {
-    Html(render::devices(&state.computer, &state.origins(), &state.fingerprint).into_string())
+pub(super) async fn settings(
+    State(state): State<Shared>,
+    _device: Device,
+    scope: crate::auth::Scope,
+) -> Html<String> {
+    let origins = state.origins_for(&scope);
+    Html(render::devices(&state.computer, &origins, &state.fingerprint).into_string())
 }
 
 /// The folders a new workspace may start in: those workspaces use, and the

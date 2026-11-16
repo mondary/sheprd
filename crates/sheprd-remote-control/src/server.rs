@@ -273,7 +273,7 @@ async fn watch_addresses(state: Arc<State>, resolver: Arc<Resolver>, bind: IpAdd
 /// Adds the origins served now to the ones an installed app may still
 /// send. Blocking; a failure to save only forgets them at the next start.
 fn remember_origins(state: &State) {
-    let origins = state.origins();
+    let origins = state.network_origins();
     let _ = state
         .seen
         .lock()

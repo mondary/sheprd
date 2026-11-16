@@ -99,7 +99,7 @@ fn the_daemon_enrolls_a_phone_and_says_where_it_answers() {
     };
     assert_eq!(enrolled.computer, state.computer);
     assert_eq!(enrolled.fingerprint, state.fingerprint);
-    assert_eq!(enrolled.origins, state.origins());
+    assert_eq!(enrolled.origins, state.network_origins());
     let Response::Devices { devices } = control::answer(&state, &stop, Request::Devices) else {
         panic!("no devices");
     };

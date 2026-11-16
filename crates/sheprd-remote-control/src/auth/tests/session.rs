@@ -2,6 +2,30 @@ use super::*;
 use crate::auth::session::{CHALLENGE_TTL_MS, MAX_CHALLENGES_PER_DEVICE, SESSION_TTL_MS};
 use secrecy::ExposeSecret as _;
 
+/// The sign-in on the network the tests drive: take, then start.
+trait NetworkSessions {
+    fn verify(
+        &mut self,
+        challenge: &ChallengeId,
+        signature: &str,
+        now_ms: u64,
+        devices: &Devices,
+    ) -> Result<Session>;
+}
+
+impl NetworkSessions for Sessions {
+    fn verify(
+        &mut self,
+        challenge: &ChallengeId,
+        signature: &str,
+        now_ms: u64,
+        devices: &Devices,
+    ) -> Result<Session> {
+        let pending = self.take(challenge, signature, &Scope::Network, now_ms, devices)?;
+        self.start(pending.device, Scope::Network, now_ms)
+    }
+}
+
 /// A store holding device 1, with its key.
 fn store(dir: &Path) -> (Devices, DeviceId, SigningKey) {
     let mut devices = Devices::load(dir).unwrap();
@@ -16,7 +40,9 @@ fn a_signed_challenge_starts_a_session() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, id, key) = store(dir.path());
     let mut sessions = Sessions::default();
-    let challenge = sessions.challenge(&id, T0, &devices).unwrap();
+    let challenge = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
     assert_eq!(challenge.expires_ms, T0 + CHALLENGE_TTL_MS);
     assert_eq!(decode_fixed::<32>(&challenge.nonce).unwrap().len(), 32);
     let session = sessions
@@ -25,7 +51,7 @@ fn a_signed_challenge_starts_a_session() {
     assert_eq!(session.device, id);
     assert_eq!(session.expires_ms, T0 + SESSION_TTL_MS);
     assert_eq!(
-        sessions.authenticate(session.token.expose_secret(), T0),
+        sessions.authenticate(session.token.expose_secret(), &Scope::Network, T0),
         Some(id)
     );
 }
@@ -35,8 +61,12 @@ fn a_signature_over_another_nonce_fails() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, id, key) = store(dir.path());
     let mut sessions = Sessions::default();
-    let challenge = sessions.challenge(&id, T0, &devices).unwrap();
-    let other = sessions.challenge(&id, T0, &devices).unwrap();
+    let challenge = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
+    let other = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
     let error = sessions
         .verify(&challenge.id, &sign(&key, &other.nonce), T0, &devices)
         .unwrap_err();
@@ -48,7 +78,9 @@ fn a_signature_by_another_key_fails() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, id, _) = store(dir.path());
     let mut sessions = Sessions::default();
-    let challenge = sessions.challenge(&id, T0, &devices).unwrap();
+    let challenge = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
     let error = sessions
         .verify(
             &challenge.id,
@@ -65,7 +97,9 @@ fn a_challenge_answers_once() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, id, key) = store(dir.path());
     let mut sessions = Sessions::default();
-    let challenge = sessions.challenge(&id, T0, &devices).unwrap();
+    let challenge = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
     let signature = sign(&key, &challenge.nonce);
     sessions
         .verify(&challenge.id, &signature, T0, &devices)
@@ -81,7 +115,9 @@ fn a_failed_answer_uses_the_challenge_up() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, id, key) = store(dir.path());
     let mut sessions = Sessions::default();
-    let challenge = sessions.challenge(&id, T0, &devices).unwrap();
+    let challenge = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
     sessions
         .verify(&challenge.id, &encode(&[1; 64]), T0, &devices)
         .unwrap_err();
@@ -96,7 +132,9 @@ fn a_challenge_expires_after_sixty_seconds() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, id, key) = store(dir.path());
     let mut sessions = Sessions::default();
-    let late = sessions.challenge(&id, T0, &devices).unwrap();
+    let late = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
     let error = sessions
         .verify(
             &late.id,
@@ -107,7 +145,9 @@ fn a_challenge_expires_after_sixty_seconds() {
         .unwrap_err();
     assert!(matches!(error, Error::UnknownChallenge));
 
-    let timely = sessions.challenge(&id, T0, &devices).unwrap();
+    let timely = sessions
+        .challenge(&id, Scope::Network, T0, &devices)
+        .unwrap();
     sessions
         .verify(
             &timely.id,
@@ -124,7 +164,11 @@ fn a_device_holds_a_bounded_number_of_challenges() {
     let (devices, id, key) = store(dir.path());
     let mut sessions = Sessions::default();
     let challenges: Vec<Challenge> = (0..=MAX_CHALLENGES_PER_DEVICE as u64)
-        .map(|offset| sessions.challenge(&id, T0 + offset, &devices).unwrap())
+        .map(|offset| {
+            sessions
+                .challenge(&id, Scope::Network, T0 + offset, &devices)
+                .unwrap()
+        })
         .collect();
     let oldest = &challenges[0];
     let error = sessions
@@ -148,7 +192,7 @@ fn only_paired_devices_get_challenges() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, _, _) = store(dir.path());
     let error = Sessions::default()
-        .challenge(&DeviceId("nope".into()), T0, &devices)
+        .challenge(&DeviceId("nope".into()), Scope::Network, T0, &devices)
         .unwrap_err();
     assert!(matches!(error, Error::UnknownDevice));
     assert_eq!(
@@ -162,7 +206,13 @@ fn malformed_signatures_are_invalid() {
     let dir = tempfile::tempdir().unwrap();
     let (devices, id, key) = store(dir.path());
     let mut sessions = Sessions::default();
-    let good = sign(&key, &sessions.challenge(&id, T0, &devices).unwrap().nonce);
+    let good = sign(
+        &key,
+        &sessions
+            .challenge(&id, Scope::Network, T0, &devices)
+            .unwrap()
+            .nonce,
+    );
     for bad in [
         String::new(),
         "!".repeat(86),
@@ -173,7 +223,9 @@ fn malformed_signatures_are_invalid() {
         format!("{good}="),
         "A".repeat(100_000),
     ] {
-        let challenge = sessions.challenge(&id, T0, &devices).unwrap();
+        let challenge = sessions
+            .challenge(&id, Scope::Network, T0, &devices)
+            .unwrap();
         let error = sessions
             .verify(&challenge.id, &bad, T0, &devices)
             .unwrap_err();
@@ -254,7 +306,7 @@ fn revoking_ends_the_devices_sessions_and_challenges() {
 fn malformed_or_unknown_bearers_authenticate_nobody() {
     let mut sessions = Sessions::default();
     for bearer in ["", "!!!", &encode(&[0; 32]), &"A".repeat(10_000)] {
-        assert_eq!(sessions.authenticate(bearer, T0), None);
+        assert_eq!(sessions.authenticate(bearer, &Scope::Network, T0), None);
     }
 }
 

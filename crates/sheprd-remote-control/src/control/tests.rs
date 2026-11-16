@@ -24,6 +24,7 @@ fn requests_and_responses_keep_their_wire_names() {
             device_name: "iPhone".into(),
             code: "428913".into(),
             app: None,
+            passkey: false,
         }))
         .unwrap(),
         json!({"response": "pairing", "state": "claimed", "device_name": "iPhone", "code": "428913"})
@@ -37,7 +38,8 @@ fn requests_and_responses_keep_their_wire_names() {
     .unwrap();
     assert!(matches!(
         from_app,
-        Response::Pairing(PairingState::Claimed { app: Some(app), .. }) if app == "https://100.64.0.9:7443"
+        Response::Pairing(PairingState::Claimed { app: Some(app),
+            passkey: false, .. }) if app == "https://100.64.0.9:7443"
     ));
     let older: Response = serde_json::from_value(
         json!({"response": "pairing", "state": "claimed", "device_name": "iPhone", "code": "428913"}),
@@ -45,7 +47,11 @@ fn requests_and_responses_keep_their_wire_names() {
     .unwrap();
     assert!(matches!(
         older,
-        Response::Pairing(PairingState::Claimed { app: None, .. })
+        Response::Pairing(PairingState::Claimed {
+            app: None,
+            passkey: false,
+            ..
+        })
     ));
 }
 

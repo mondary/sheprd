@@ -41,6 +41,7 @@ remote-pair-get-app = Get the iPhone app (Enter)
 remote-pair-wants = { $device } wants remote control of your chats.
 # $app is the address the phone's app was installed from.
 remote-pair-app = It asks from the Sheprd app at { $app }. Allow it only if you are adding this computer to that app.
+remote-pair-passkey = It pairs through your relay's web address and will sign in there with a passkey.
 remote-pair-same-code = Allow it only if the phone shows the same code.
 remote-pair-deny = Deny
 remote-pair-allow = Allow

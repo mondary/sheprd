@@ -112,6 +112,7 @@ impl Session {
         tokio::spawn(live::run(
             state.clone(),
             token.into(),
+            crate::auth::Scope::Network,
             device.clone(),
             inbound,
             outbound,

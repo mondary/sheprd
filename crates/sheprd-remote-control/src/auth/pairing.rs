@@ -47,6 +47,8 @@ pub(crate) struct NewDevice {
     pub(crate) app: Option<String>,
     pub(crate) id: DeviceId,
     pub(crate) name: String,
+    /// The passkey a phone claiming on a web origin made there.
+    pub(crate) passkey: Option<super::passkey::Passkey>,
     pub(crate) public_key: PublicKey,
     /// The relay keys the phone sent with its claim, stored when approved.
     pub(crate) relay: Option<super::devices::RelayKeys>,
@@ -92,7 +94,7 @@ enum Phase {
     Waiting,
     Claimed {
         claim: ClaimId,
-        device: NewDevice,
+        device: Box<NewDevice>,
         code: String,
         deadline_ms: u64,
     },
@@ -131,6 +133,7 @@ impl Open {
                 device_name: device.name.clone(),
                 code: code.clone(),
                 app: device.app.clone(),
+                passkey: device.passkey.is_some(),
             },
             Phase::Finished { state, .. } => state.clone(),
         }
@@ -229,6 +232,7 @@ impl Pairings {
             app: None,
             id: DeviceId(random_id()?),
             name,
+            passkey: None,
             public_key,
             relay: None,
         };
@@ -243,7 +247,7 @@ impl Pairings {
         let deadline_ms = now_ms.saturating_add(APPROVAL_TTL_MS);
         open.phase = Phase::Claimed {
             claim: claim.clone(),
-            device,
+            device: Box::new(device),
             code: code.clone(),
             deadline_ms,
         };
@@ -301,6 +305,21 @@ impl Pairings {
             && id == claim
         {
             device.relay = Some(keys);
+        }
+    }
+
+    /// Keeps the passkey the phone made for `claim` on a web origin, stored
+    /// with the device when approved.
+    pub(crate) fn claimed_passkey(&mut self, claim: &ClaimId, passkey: super::passkey::Passkey) {
+        if let Some(Open {
+            phase: Phase::Claimed {
+                claim: id, device, ..
+            },
+            ..
+        }) = self.open.as_mut()
+            && id == claim
+        {
+            device.passkey = Some(passkey);
         }
     }
 
@@ -369,7 +388,7 @@ impl Pairings {
             device: device.id.clone(),
         };
         match settle(open, &mut self.outcomes, approved) {
-            Phase::Claimed { device, .. } => Ok(Some(device)),
+            Phase::Claimed { device, .. } => Ok(Some(*device)),
             _ => Err(Error::NotClaimed),
         }
     }

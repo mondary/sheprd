@@ -3,7 +3,10 @@
 //! API, as axum serves it on the network.
 
 use super::{Relays, Result, Served};
-use crate::web::{Peer, Relayed, Shared};
+use crate::{
+    auth::Scope,
+    web::{Peer, Relayed, Shared},
+};
 use axum::{Extension, extract::ConnectInfo};
 use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 use sha2::{Digest, Sha256};
@@ -105,11 +108,13 @@ pub(super) async fn web_session(
     let Ok(Ok(tls)) = accepted else {
         return;
     };
+    // The scope makes devices sign in there with a passkey for that name.
     let service = TowerToHyperService::new(
         served
             .router
             .layer(Extension(ConnectInfo(Peer(peer))))
-            .layer(Extension(Relayed)),
+            .layer(Extension(Relayed))
+            .layer(Extension(Scope::Web(serving.host))),
     );
     let done = hyper::server::conn::http1::Builder::new()
         .serve_connection(TokioIo::new(tls), service)

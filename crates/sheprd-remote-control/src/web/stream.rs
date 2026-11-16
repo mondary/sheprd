@@ -63,6 +63,7 @@ impl Drop for Connected {
 pub(super) async fn stream(
     State(state): State<Shared>,
     Device(device): Device,
+    scope: crate::auth::Scope,
     headers: HeaderMap,
     Query(target): Query<Target>,
 ) -> Stream<impl futures_lite::Stream<Item = Result<Sse, Infallible>>> {
@@ -82,7 +83,7 @@ pub(super) async fn stream(
         };
         tokio::select! {
             () = follow => {}
-            () = lose_access(&state, token.expose_secret()) => {
+            () = lose_access(&state, token.expose_secret(), &scope) => {
                 // Reloading fetches fragments, which ask the phone to sign in.
                 let _ = sender.send(reload()).await;
             }
@@ -96,7 +97,7 @@ pub(super) async fn stream(
 
 /// Returns once the session `token` no longer authenticates: its device
 /// was revoked or forgotten, or the session expired.
-async fn lose_access(state: &Shared, token: &str) {
+async fn lose_access(state: &Shared, token: &str, scope: &crate::auth::Scope) {
     let mut revocations = state.auth().watch_revocations();
     let mut check = tokio::time::interval(ACCESS_CHECK);
     loop {
@@ -104,7 +105,11 @@ async fn lose_access(state: &Shared, token: &str) {
             _ = check.tick() => {}
             changed = revocations.changed() => if changed.is_err() { return },
         }
-        if state.auth().authenticate(token, render::now_ms()).is_none() {
+        if state
+            .auth()
+            .authenticate_in(token, scope, render::now_ms())
+            .is_none()
+        {
             return;
         }
     }

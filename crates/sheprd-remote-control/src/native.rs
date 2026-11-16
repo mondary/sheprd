@@ -104,6 +104,7 @@ pub(crate) async fn get_chat(
 pub(crate) async fn live(
     State(state): State<Shared>,
     Device(device): Device,
+    scope: crate::auth::Scope,
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
@@ -116,17 +117,23 @@ pub(crate) async fn live(
     Ok(upgrade
         .max_message_size(MAX_INBOUND)
         .max_frame_size(MAX_INBOUND)
-        .on_upgrade(move |socket| serve(socket, state, device, token)))
+        .on_upgrade(move |socket| serve(socket, state, device, token, scope)))
 }
 
 /// Carries messages between the socket and the session until either ends:
 /// the phone closes, sends a binary or oversized frame, or the session
 /// says `bye`.
-async fn serve(mut socket: WebSocket, state: Shared, device: DeviceId, token: SecretString) {
+async fn serve(
+    mut socket: WebSocket,
+    state: Shared,
+    device: DeviceId,
+    token: SecretString,
+    scope: crate::auth::Scope,
+) {
     let _connected = Connected::new(state.clone(), device.clone());
     let (to_phone, mut outbound) = mpsc::channel(OUTBOUND_QUEUE);
     let (inbound, from_phone) = mpsc::channel(INBOUND_QUEUE);
-    let session = tokio::spawn(live::run(state, token, device, from_phone, to_phone));
+    let session = tokio::spawn(live::run(state, token, scope, device, from_phone, to_phone));
     let mut ping = tokio::time::interval(PING_INTERVAL);
     ping.reset();
     loop {
