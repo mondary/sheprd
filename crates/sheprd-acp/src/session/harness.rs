@@ -42,6 +42,7 @@ impl<R: FnMut(Update)> Session<R> {
         self.ready = false;
         self.turn = None;
         self.config.agent = agent.display_name().to_owned();
+        self.context.switched(&self.config.agent);
         self.config.harness = Some(agent);
         self.config.login_hint = Some(agent.login_hint().to_owned());
 

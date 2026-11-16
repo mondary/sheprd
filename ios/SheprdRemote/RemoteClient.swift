@@ -242,6 +242,12 @@ final class RemoteClient: Sendable {
         )
     }
 
+    /// Hands this phone's relay keys for another computer to this one, to
+    /// carry there; posting the same request again reads where it stands.
+    func carryRelay(_ request: API.HostRelayRequest, bearer: String) async throws -> API.HostRelayState {
+        try await send("POST", "/api/v2/hosts/relay", body: request, bearer: bearer)
+    }
+
     // MARK: Tags
 
     /// Offers this phone's copy of the computer's tags; answers those that
@@ -350,6 +356,15 @@ final class RemoteClient: Sendable {
     func checkLog(job: UInt64, workspace: String, bearer: String) async throws -> CheckLogExcerpt {
         try await send("GET", "/api/v2/workspaces/\(Self.segment(workspace))/checks/\(job)/log",
                        bearer: bearer, timeout: Self.askTimeout)
+    }
+
+    /// A GitHub token this computer lends the phone for `host`
+    /// (`GitHubLeases`): 404 when it has no account there, 403 when sharing
+    /// is off, 429 and 504 when it asks the phone to wait. The answer is
+    /// SheprdGitHub's `LeaseAnswer`, named by the caller: the share extension
+    /// compiles this file without linking SheprdGitHub.
+    func githubToken<Answer: Decodable>(host: String, bearer: String) async throws -> Answer {
+        try await send("GET", "/api/v2/github/token?\(Self.query(["host": host]))", bearer: bearer, timeout: Self.askTimeout)
     }
 
     /// Longer than the computer waits for Sheprd (`ANSWER_WAIT`), so it is

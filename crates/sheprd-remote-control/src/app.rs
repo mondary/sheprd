@@ -10,6 +10,7 @@ mod error;
 pub mod firewall;
 pub mod pairing;
 pub mod qr;
+pub mod relay_enroll;
 pub mod service;
 pub mod shortcuts;
 pub mod tags;

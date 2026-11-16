@@ -55,7 +55,7 @@ pub(super) async fn enroll(
         state_for_write
             .auth()
             .devices_mut()
-            .set_relay(&device, keys)
+            .set_relay(&device, keys, crate::web::render::now_ms())
     })
     .await
     .map_err(|_| ApiError::NotFound)??;

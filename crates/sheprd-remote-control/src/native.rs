@@ -6,6 +6,7 @@
 pub(crate) mod changes;
 mod convert;
 mod create;
+pub(crate) mod github;
 mod live;
 mod model;
 mod search;
@@ -47,8 +48,8 @@ const MAX_STREAMS: usize = 8;
 /// How often an idle socket is pinged, so proxies and NATs keep it.
 const PING_INTERVAL: Duration = Duration::from_secs(20);
 
-/// This computer's home as the state holds it now.
-fn home(state: &Shared) -> Home {
+/// This computer's home as the state holds it now, for `device`.
+fn home(state: &Shared, device: &DeviceId) -> Home {
     let layout = state.hub.layout();
     let summaries: HashMap<String, Summary> = layout
         .chats()
@@ -60,26 +61,32 @@ fn home(state: &Shared) -> Home {
         })
         .collect();
     let pull_requests = state.pull_requests.borrow().clone();
+    let checkouts = state.lending.checkouts.current();
+    let recognized = state.lending.recognized();
     let mut home = Home::project(Sources {
+        checkouts: &checkouts,
         computer: &state.computer,
         fingerprint: &state.fingerprint,
         layout: &layout,
         load: *state.load.borrow(),
         summaries,
         pull_requests: &pull_requests,
+        recognized: &recognized,
         shortcuts_ms: state.shortcuts.current().updated_ms,
         tags: state.tags.current(),
         version: crate::server::version(),
         waiting: state.attention().len(),
     });
     home.github = Some(state.github.enabled());
+    home.github_hosts = github::lent_hosts(state, device);
     home
 }
 
 /// `GET /api/v2/home`.
-pub(crate) async fn get_home(State(state): State<Shared>, _device: Device) -> Json<Home> {
+pub(crate) async fn get_home(State(state): State<Shared>, Device(device): Device) -> Json<Home> {
     state.hub.wake_for_phone();
-    Json(home(&state))
+    state.lending.checkouts.want();
+    Json(home(&state, &device))
 }
 
 /// `GET /api/v2/chat/{pane}`: the transcript and its cursor.

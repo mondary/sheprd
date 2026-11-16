@@ -83,6 +83,8 @@ pub struct Pairing {
     /// The hosts ticked when the user allowed the phone, for it to be
     /// paired with too.
     hosts: Vec<control::hosts::HostId>,
+    /// The dialog's "Share GitHub sign-in with this phone" switch.
+    share_github: bool,
 }
 
 impl Pairing {
@@ -99,11 +101,23 @@ impl Pairing {
             last_poll: None,
             preferred_address: None,
             hosts: Vec::new(),
+            share_github: true,
         }
     }
 
     pub fn phase(&self) -> &Phase {
         &self.phase
+    }
+
+    /// Whether an approval lets the phone borrow this computer's GitHub
+    /// sign-in; on unless the user turns it off.
+    pub fn share_github(&self) -> bool {
+        self.share_github
+    }
+
+    /// The dialog's switch, read when the approval is sent.
+    pub fn set_share_github(&mut self, share: bool) {
+        self.share_github = share;
     }
 
     /// Select an address before the first offer arrives, for a CLI-opened dialog.
@@ -167,6 +181,7 @@ impl Pairing {
                 } else {
                     Vec::new()
                 },
+                share_github: !*allow || self.share_github,
             },
             Phase::Showing { offer, .. } | Phase::Claimed { offer, .. } if poll_due => {
                 Request::Pairing {

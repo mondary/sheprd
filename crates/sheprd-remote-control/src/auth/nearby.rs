@@ -106,16 +106,7 @@ pub(crate) fn shared_secret(daemon: &SecretKey, phone: &PublicKey) -> Result<Zer
 
 /// The 32 bytes of a fingerprint written as hex, with or without colons.
 pub(crate) fn fingerprint_bytes(fingerprint: &str) -> Option<[u8; 32]> {
-    let digits: Vec<u8> = fingerprint.bytes().filter(|byte| *byte != b':').collect();
-    if digits.len() != 64 {
-        return None;
-    }
-    let mut bytes = [0; 32];
-    for (index, pair) in digits.chunks(2).enumerate() {
-        let text = std::str::from_utf8(pair).ok()?;
-        bytes[index] = u8::from_str_radix(text, 16).ok()?;
-    }
-    Some(bytes)
+    crate::control::host_relay::fingerprint_bytes(fingerprint)
 }
 
 /// The fingerprint as 64 uppercase hex digits, no colons.

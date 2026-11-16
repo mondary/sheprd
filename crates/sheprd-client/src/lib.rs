@@ -28,6 +28,7 @@ pub mod login_env;
 mod method;
 mod options;
 pub mod private_endpoint;
+pub mod private_file;
 mod process;
 mod queue;
 mod remote_host;

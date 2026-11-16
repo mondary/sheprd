@@ -24,6 +24,7 @@ The native app for Sheprd's remote control (`docs/ios-app-plan.md`).
 | --- | --- |
 | `project.yml` | XcodeGen spec for the `SheprdRemote` app and the `SheprdRemoteWidgets` extension: iOS 26, Swift 6 with complete concurrency checking, iPhone and iPad |
 | `SheprdRemoteCore/` | Swift package with no UIKit: the transcript model and its reducer, the v2 API's messages, `ComputerLink` (address racing, resubscription, backoff), pairing links, fingerprints, session signatures, sealed notifications |
+| `SheprdRemoteCore/Sources/SheprdGitHub/` | The phone's GitHub client, its own target over `SheprdRemoteCore` (never the reverse) and linked by the app alone: hosts, leased and signed-in tokens, the GraphQL and REST reads, pull requests, checks, and their logs |
 | `SheprdRemote/` | The app: `Fleet` (one link per computer), `Cache`, the pinned HTTPS and WebSocket client, pairing, Keychain, and `Views/` |
 | `SheprdRemoteWidgets/` | The lock screen and Dynamic Island layouts |
 | `Shared/` | The Live Activity's attributes, compiled into both targets |
@@ -99,6 +100,10 @@ and nothing goes through your phone.
      confirmation for the first failing check's log.
    - `-renameWorkspace YES` opens a workspace's rename alert. It lists the
      local Herdr daemon's real workspaces, so pressing Rename changes one.
+     `-renamePending NAME` shows a rename to NAME on its way, sending nothing.
+     `-askAgentName YES` asks the workspace's most recent agent chat for a
+     short name and renames the workspace to it, as the alert's Ask button
+     does; that prompts the chat's agent once.
    - `-newWorkspace YES` opens the new workspace form.
    - `-computerTags work,lab` tags the first computer, `-computerTagFilter work`
      filters Workspaces by a tag, and `-openComputer YES` opens the first

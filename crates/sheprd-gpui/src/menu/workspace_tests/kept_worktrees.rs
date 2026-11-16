@@ -423,4 +423,5 @@ fn a_kept_dialog_outlives_the_tick_without_herdr_1(cx: &mut TestAppContext) {
     });
 }
 
+mod reuse;
 mod workflows;

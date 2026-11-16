@@ -10936,6 +10936,7 @@ dependencies = [
  "sheprd-chat-protocol",
  "sheprd-client",
  "sheprd-core-client",
+ "sheprd-memory",
  "tempfile",
  "thiserror 2.0.21",
  "unicode-width",
@@ -11212,6 +11213,7 @@ dependencies = [
  "sheprd-diagnostics",
  "sheprd-github",
  "sheprd-i18n",
+ "sheprd-memory",
  "sheprd-mods",
  "sheprd-orchestrator",
  "sheprd-relay",
@@ -11280,6 +11282,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sheprd-memory"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "sheprd-client",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
 name = "sheprd-mods"
 version = "0.1.0"
 dependencies = [
@@ -11321,6 +11335,7 @@ dependencies = [
  "sheprd-client",
  "sheprd-credentials",
  "sheprd-github",
+ "sheprd-memory",
  "sheprd-remote",
  "sheprd-session",
  "tempfile",

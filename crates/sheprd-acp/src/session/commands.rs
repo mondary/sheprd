@@ -112,7 +112,7 @@ impl<R: FnMut(Update)> Session<R> {
         let prompt = self.projector.prompt(&shown, attachments.len());
         self.emit(prompt);
         let mut blocks = Vec::with_capacity(prepared.len() + 2);
-        if let Some(note) = self.context.before(origin) {
+        if let Some(note) = self.context.before_prompt(origin, text) {
             blocks.push(wire::ContentBlock::Text(wire::TextContent::new(note)));
         }
         if !text.trim().is_empty() {

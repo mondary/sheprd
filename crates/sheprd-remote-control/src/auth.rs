@@ -10,6 +10,7 @@
 
 pub(crate) mod devices;
 mod handoff;
+pub(crate) mod host_relays;
 mod limits;
 pub(crate) mod links;
 pub(crate) mod nearby;
@@ -59,6 +60,8 @@ pub enum Error {
     Encode(#[source] serde_json::Error),
     #[error("this pairing token expired")]
     ExpiredToken,
+    #[error(transparent)]
+    HostRelay(#[from] host_relays::Error),
     #[error("the device key is not a P-256 public key")]
     InvalidKey,
     #[error("a device name must be 1 to 64 characters with no control characters")]
@@ -316,6 +319,7 @@ pub(crate) struct Auth {
     challenge_limit: RateLimiter<IpAddr>,
     devices: Devices,
     handoffs: Handoffs,
+    host_relays: host_relays::HostRelays,
     links: links::Links,
     nearby: NearbySessions,
     pair_limit: RateLimiter<IpAddr>,
@@ -345,6 +349,7 @@ impl Auth {
             ),
             devices,
             handoffs: Handoffs::load(state_dir),
+            host_relays: host_relays::HostRelays::default(),
             links: links::Links::load(state_dir),
             nearby: NearbySessions::default(),
             pair_limit: RateLimiter::new(
@@ -542,16 +547,18 @@ impl Auth {
         shown: &str,
         now_ms: u64,
     ) -> Result<PairingState> {
-        self.answer_with_hosts(id, allow, shown, &[], now_ms)
+        self.answer_with_hosts(id, allow, shown, &[], true, now_ms)
     }
 
-    /// [`Self::answer`], allowing the device on the hosts the desktop ticked.
+    /// [`Self::answer`], allowing the device on the hosts the desktop ticked,
+    /// and to borrow the GitHub sign-in when `share_github` says so.
     pub(crate) fn answer_with_hosts(
         &mut self,
         id: &PairingId,
         allow: bool,
         shown: &str,
         hosts: &[HostId],
+        share_github: bool,
         now_ms: u64,
     ) -> Result<PairingState> {
         if allow {
@@ -567,7 +574,7 @@ impl Auth {
         let devices = &mut self.devices;
         let links = self.links.allowed(hosts);
         self.pairings.answer(id, allow, now_ms, |device| {
-            devices.add_with(device.clone(), now_ms, None, links)
+            devices.add_with(device.clone(), now_ms, None, links, share_github)
         })?;
         self.sync_apps();
         self.pairings.state(id, now_ms)
@@ -720,6 +727,7 @@ impl Auth {
         if let Some(record) = self.devices.get(device) {
             self.links.forget(record)?;
         }
+        self.host_relays.forget(device);
         // The device goes either way; a stale digest only names a device
         // that no longer exists.
         let _ = self.handoffs.forget(device);
@@ -790,6 +798,44 @@ impl Auth {
         self.links.revoked(revoke)
     }
 
+    /// The phone asks for its relay keys to be carried to another of its
+    /// computers (`control::host_relay`).
+    pub(crate) fn ask_host_relay(
+        &mut self,
+        device: &DeviceId,
+        request: control::host_relay::Request,
+        now_ms: u64,
+    ) -> Result<control::host_relay::State> {
+        let record = self.devices.get(device).ok_or(Error::UnknownDevice)?;
+        self.host_relays.ask(record, request, now_ms)
+    }
+
+    pub(crate) fn take_host_relays(&mut self, now_ms: u64) -> Vec<control::host_relay::Job> {
+        self.host_relays.take(now_ms)
+    }
+
+    pub(crate) fn host_relayed(
+        &mut self,
+        device: &DeviceId,
+        request: &control::host_relay::Request,
+        outcome: control::host_relay::Outcome,
+        now_ms: u64,
+    ) -> Result<()> {
+        self.host_relays.finish(device, request, outcome, now_ms)
+    }
+
+    /// On the far computer, whose CA has `fingerprint`: keeps a phone's
+    /// relay keys it signed with its own key here; false when `request`
+    /// names another computer. Blocking.
+    pub(crate) fn keep_relay(
+        &mut self,
+        request: &control::host_relay::Request,
+        fingerprint: &[u8; 32],
+        now_ms: u64,
+    ) -> Result<bool> {
+        host_relays::keep(&mut self.devices, request, fingerprint, now_ms)
+    }
+
     /// On a host: adds a phone another computer's user allowed. A device it
     /// replaces goes only when it too was enrolled that way, so a computer
     /// cannot revoke a phone paired here directly. Blocking.
@@ -818,6 +864,9 @@ impl Auth {
             now_ms,
             Some(via),
             Vec::new(),
+            // As a phone paired here directly: on until the user turns it
+            // off in this host's Sheprd.
+            true,
         )?;
         Ok(id)
     }

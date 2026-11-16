@@ -325,6 +325,20 @@ pub(crate) fn run_owned(
         AgentChoice::Builtin { agent, .. } => Some(*agent),
         AgentChoice::Command { .. } => None,
     };
+    // A file of the user's that cannot be used says so in the chat, which
+    // then uses the built-in text.
+    let prompts = match crate::context::Prompts::dir() {
+        Some(dir) => {
+            let (prompts, problems) = crate::context::Prompts::load(&dir);
+            notices.extend(
+                problems
+                    .into_iter()
+                    .map(|problem| (NoticeLevel::Warning, problem.to_string())),
+            );
+            prompts
+        }
+        None => crate::context::Prompts::default(),
+    };
     let config = Config {
         agent: agent.display,
         choices: harness.filter(|_| options.choose).map(choices),
@@ -335,9 +349,9 @@ pub(crate) fn run_owned(
         load: options.load,
         login_hint: agent.login_hint,
         pane: target.map(|target| target.pane),
+        prompts,
         require_load: options.require_load,
-        system_prompt: crate::context::system_prompt_path()
-            .and_then(|path| crate::context::read_system_prompt(&path)),
+        sheprd: crate::context::sheprd_executable(),
     };
     let launcher = inputs.clone();
     let session_thread = thread::Builder::new()

@@ -162,10 +162,25 @@ and builds without embedded pages return exit 8. See [px0](../crates/sheprd-gpui
 
 ### Worktrees and agents
 
+Memory is kept per Git repository on the host the repository is on, in
+`repositories/<id>/memory.sqlite3` under Sheprd's state directory, keyed by
+the Git common directory every worktree of it shares. Each repository keeps
+at most 2000 entries; pinned ones stay, and the least recently used of the
+rest go first. Agents learn when to use it from the managed skill. In
+`sheprd-acp` chats, the note sent ahead of the first prompt also explains it
+and shows `memory index`, and each prompt after brings up to 3 entries that
+share at least two of its keywords and were not shown yet in that chat.
+
 | Command | What it does |
 | --- | --- |
 | `notes [list]` | Every worktree note |
 | `notes get\|clear`, `notes set TEXT` | The note on your checkout (its repository and branch) |
+| `memory [list] [--all] [--limit N]` | What agents learned about the current directory's repository: pinned entries first, then the most recently used, of the repository and the current branch (`--all`: every branch's). Exits 4 when there are none (no app needed) |
+| `memory search WORDS [--all] [--limit N]` | Entries holding every word as a prefix, else any of them, best first; each found counts as used. Exits 4 when nothing matches (no app needed) |
+| `memory index [--chars N]` | What an agent should see before it starts, within N characters (default 3000): pinned entries, the branch's own, then the most recently used, with how many more there are (no app needed) |
+| `memory get ID` | One entry with its details (no app needed) |
+| `memory add [--branch] [--kind KIND] [--name NAME] [--pin] [--details TEXT] TEXT` | Keep TEXT (at most 500 bytes; details up to 16 KiB) for the next agent in any worktree, tab, or chat of the repository, or with `--branch` for the current branch only. KIND is `fact` (default), `gotcha`, `command`, `decision`, `preference`, or `handoff`. With `--name`, a later add of that name updates the entry; the same text again only marks it used. Secrets, tokens, invisible characters, and prompt markup are refused (no app needed) |
+| `memory pin\|unpin ID`, `memory forget ID` | Pin an entry (first in every listing, never dropped; at most 50), unpin it, or remove it; exits 5 when there is none (no app needed) |
 | `worktree [status]`, `worktree mute\|unmute` | Whether your worktree's notifications are muted; silence them or let them through again |
 | `worktree list` | List app-kept Git workspaces on the caller's host, with host, workspace, path, branch and linked-checkout status; unopened Git checkouts are in the Existing picker |
 | `worktree create [BRANCH]`, `worktree open`, `worktree delete` | Open the caller's Herdr 2 new-worktree, existing-checkout, or deletion dialog; the user confirms in the app. Host identity follows the caller, including SSH, cloud and WSL devices |
@@ -376,8 +391,11 @@ Standalone phone PR/check/log reads are opt-in per computer. After signing in
 with `gh auth login` on that host, set `[remote] github_cli = true` and restart
 its remote-control service. The foreground daemon accepts
 `sheprd-remote-control serve --state-dir DIR --github-cli`. This permits paired
-phones to read the listed workspaces using that host's GitHub CLI credential;
-pairing never copies the desktop's credential. See the
+phones to read the listed workspaces using that host's GitHub CLI credential.
+Separately, the iPhone app may borrow a GitHub sign-in to read GitHub itself,
+only while the phone's **Share GitHub sign-in** switch is on (each device in
+`devices --json` has `share_github`); the switch is set in the pairing dialog
+and in Settings, never from this command. See the
 [scope, cache and access policy](../crates/sheprd-remote-control/README.md#workspace-pull-requests-and-titles).
 
 ```sh

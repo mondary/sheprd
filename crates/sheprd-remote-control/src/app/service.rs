@@ -102,6 +102,9 @@ impl Plan {
         if config.github_cli {
             args.push("--github-cli".into());
         }
+        for host in &config.github_hosts {
+            args.extend(["--github-host".into(), host.into()]);
+        }
         for relay in &config.relays {
             args.extend(["--relay".into(), relay.endpoint.as_str().into()]);
             for (option, value) in relay.label.args() {

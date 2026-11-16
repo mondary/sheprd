@@ -57,8 +57,9 @@ fn config() -> Config {
         load: None,
         login_hint: Some("run `claude` and use /login".to_owned()),
         pane: Some("p_1".to_owned()),
+        prompts: Default::default(),
         require_load: false,
-        system_prompt: None,
+        sheprd: None,
     }
 }
 

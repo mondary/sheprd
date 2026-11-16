@@ -168,6 +168,14 @@ with it, sessions last 10 minutes, and that device signs in nowhere else
 4. After approval the device is stored (public key, name, created, last seen)
    and gets session tokens by signing challenges. Revoking it in Sheprd
    ends its sessions and drops its push subscription immediately.
+   The approval step also carries **Share GitHub sign-in with this phone**,
+   on by default and naming the account it lends; the choice is kept with
+   the device (`share_github`, which a record from before the switch reads
+   as on) and changed later beside each device in Settings > Remote
+   control (`Request::ShareGitHub`). Turning it off, or revoking the
+   device, stops further tokens (`GET /api/v2/github/token`,
+   `docs/ios-github-plan.md`); a `gh` token the phone already holds works
+   until `gh` signs out.
 5. iOS gives a Home Screen web app storage of its own, so the key saved in
    the browser never reaches it. While the paired browser shows home, it
    mints a single-use handoff token (24 hours, one per device, reused until

@@ -136,6 +136,10 @@ pub async fn run(options: Options) -> Result<()> {
         fingerprint,
         github: crate::native::changes::github::Reader::new(options.github_cli),
         hub,
+        lending: crate::native::github::Lending::new(
+            options.github_hosts.clone(),
+            sheprd_github::cli::token_for,
+        ),
         live_activities: options.live_activities,
         load,
         look: web::Look::load(&options.state_dir),
@@ -172,6 +176,8 @@ pub async fn run(options: Options) -> Result<()> {
     // pictures.
     state.uploads.remove_leftovers();
     tokio::spawn(notifier::run(state.clone()));
+    tokio::spawn(crate::native::github::checkouts::follow(state.clone()));
+    tokio::spawn(crate::native::github::follow_gh_hosts(state.clone()));
     if state.github.enabled() {
         tokio::spawn(crate::native::changes::github::badges(state.clone()));
     }

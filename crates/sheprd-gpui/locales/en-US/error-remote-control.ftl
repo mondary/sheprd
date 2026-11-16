@@ -4,6 +4,8 @@
 
 # $key is the certificate's config key: cert or key.
 error-remote-control-certificate-path = remote.certificate { $key } must be an absolute UTF-8 path
+# $host is an entry of remote.github_hosts as the user wrote it.
+error-remote-control-github-host = remote.github_hosts has { $host }, which is not a host name
 error-remote-control-idle-days = remote.device_idle_days must be between 0 (never) and 365
 # $operation is what failed on the file or folder $path.
 error-remote-control-io = { $operation ->

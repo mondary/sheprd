@@ -160,6 +160,7 @@ fn a_claim_asks_the_user_and_allow_waits_for_approval() {
             allow: true,
             code: "428913".into(),
             hosts: Vec::new(),
+            share_github: true,
         }
     );
     assert!(matches!(
@@ -216,6 +217,7 @@ fn deny_ends_the_pairing() {
             allow: false,
             code: "000111".into(),
             hosts: Vec::new(),
+            share_github: true,
         }
     );
     assert_eq!(pairing.phase(), &Phase::Denied);

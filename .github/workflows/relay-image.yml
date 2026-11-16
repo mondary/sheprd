@@ -23,6 +23,7 @@ on:
       - 'scripts/relay-image.sh'
       - 'deploy/relay/**'
       - 'scripts/test_relay_deploy.py'
+      - 'website/site/relay/**'
       - '.github/workflows/relay-image.yml'
   pull_request:
     paths:
@@ -33,6 +34,7 @@ on:
       - 'scripts/relay-image.sh'
       - 'deploy/relay/**'
       - 'scripts/test_relay_deploy.py'
+      - 'website/site/relay/**'
       - '.github/workflows/relay-image.yml'
   workflow_dispatch:
 

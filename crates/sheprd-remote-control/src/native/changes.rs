@@ -6,7 +6,7 @@
 
 mod error;
 pub(crate) mod github;
-mod local;
+pub(crate) mod local;
 mod mailbox;
 
 pub(crate) use error::Error;

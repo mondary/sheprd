@@ -37,7 +37,6 @@ pub(crate) use crate::control::RelayState as Status;
 use crate::control::RelayStatus;
 use crate::relay_label::RelayLabel;
 use crate::server::Relay;
-use serde::Serialize;
 use sheprd_relay::Endpoint;
 use sheprd_relay::wire::Key;
 use std::{
@@ -144,35 +143,7 @@ struct Started {
 }
 
 /// What a paired phone needs to reach this computer through its relays.
-#[derive(Debug, Serialize)]
-pub(crate) struct Info {
-    /// The tunnel identity to pin: X25519 then ML-KEM-768, base64url.
-    pub(crate) identity: String,
-    /// What the user calls each relay, by endpoint as `relays` writes it;
-    /// unlabelled relays are left out, and the field with them.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) labels: BTreeMap<String, RelayLabel>,
-    /// The relays this computer listens on, nearest first; those not
-    /// listening now keep their configured order, after the rest.
-    pub(crate) relays: Vec<String>,
-    /// This computer's route, base64url.
-    pub(crate) route: String,
-    /// Each listening relay's round trip from this computer, in
-    /// milliseconds, so the phone can add its own leg. Older phones ignore
-    /// it.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) rtt_ms: BTreeMap<String, u32>,
-}
-
-impl Info {
-    /// The info without labels: see [`Relays::offer`].
-    fn without_labels(self) -> Self {
-        Self {
-            labels: BTreeMap::new(),
-            ..self
-        }
-    }
-}
+pub(crate) use crate::control::host_relay::Info;
 
 impl Relays {
     /// Loads or makes the relay keys in `state_dir`, and the relays other

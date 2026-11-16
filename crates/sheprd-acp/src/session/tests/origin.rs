@@ -4,6 +4,7 @@
 use sheprd_chat_protocol::{Device, Origin, Via};
 
 use super::*;
+use crate::context::{Facts, Prompts};
 use sheprd_chat_protocol::{Entry, EntryId, Transcript};
 
 const PHONE: Origin = Origin::new(Device::PhoneApp, Via::Tailscale);
@@ -88,7 +89,7 @@ fn a_queued_prompt_keeps_where_it_was_typed() {
 #[test]
 fn the_system_prompt_goes_with_the_first_prompt_only() {
     let mut harness = harness_with(Config {
-        system_prompt: Some("Answer in French.".to_owned()),
+        prompts: Prompts::with_instructions("Answer in French."),
         ..config()
     });
     harness.session.start();
@@ -107,9 +108,13 @@ fn the_system_prompt_goes_with_the_first_prompt_only() {
 
 /// The note a chat sent from the phone with the instructions "Be brief.".
 fn said_on_phone() -> String {
-    Context::new(Some("Be brief.".to_owned()), Default::default())
-        .before(Some(PHONE))
-        .unwrap()
+    Context::new(
+        Prompts::with_instructions("Be brief."),
+        Facts::default(),
+        Default::default(),
+    )
+    .before(Some(PHONE))
+    .unwrap()
 }
 
 fn said(id: u64, text: &str) -> Entry {
@@ -131,7 +136,7 @@ fn continued() -> Harness {
     ];
     let mut harness = harness_with(Config {
         history: Some(history),
-        system_prompt: Some("Be brief.".to_owned()),
+        prompts: Prompts::with_instructions("Be brief."),
         ..config()
     });
     harness.session.start();
@@ -171,7 +176,7 @@ fn a_restored_chat_tells_again_only_on_another_device() {
 fn a_replayed_conversation_hides_its_notes_and_counts_them_told() {
     let mut harness = harness_with(Config {
         load: Some("old".to_owned()),
-        system_prompt: Some("Be brief.".to_owned()),
+        prompts: Prompts::with_instructions("Be brief."),
         ..config()
     });
     harness.session.start();

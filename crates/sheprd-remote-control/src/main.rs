@@ -5,7 +5,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 use sheprd_remote_control::{
-    app::{enroll, shortcuts, tags},
+    app::{enroll, relay_enroll, shortcuts, tags},
     control::DeviceId,
     server::{self, Invocation},
     shared_relays,
@@ -19,6 +19,14 @@ fn main() -> ExitCode {
     let options = match server::parse(std::env::args_os()) {
         Ok(Invocation::Serve(options)) => *options,
         Ok(Invocation::Enroll { state_dir }) => return host(state_dir, run_enroll),
+        Ok(Invocation::RelayEnroll { state_dir }) => {
+            return host(state_dir, |state_dir| {
+                let mut text = String::new();
+                std::io::stdin().take(MAX_INPUT).read_to_string(&mut text)?;
+                let request = serde_json::from_str(&text).map_err(std::io::Error::from)?;
+                print_json(&relay_enroll::relay_enroll(&request, state_dir))
+            });
+        }
         Ok(Invocation::Revoke { state_dir, device }) => {
             return host(state_dir, |state_dir| {
                 enroll::revoke(state_dir, DeviceId(device))?;

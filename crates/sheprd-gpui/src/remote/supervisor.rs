@@ -13,6 +13,7 @@ use sheprd_remote_control::control::pull_requests::PullRequests;
 use sheprd_remote_control::control::{self, Device, DeviceId, Request, Response, Status};
 
 mod changes;
+mod github;
 mod links;
 mod pull_requests;
 mod update;
@@ -102,6 +103,8 @@ pub(crate) struct Supervisor {
     devices: Option<Vec<Device>>,
     /// Why the last service change failed, until the next one.
     failure: Option<Arc<crate::Error>>,
+    /// Lending the main GitHub account to phones.
+    github: github::Lending,
     health: Health,
     /// The status marks set in Sheprd (`status_icons`), by config name,
     /// which the phone's lists draw too.
@@ -144,6 +147,7 @@ impl Default for Supervisor {
             config: RemoteConfig::default(),
             devices: None,
             failure: None,
+            github: github::Lending::default(),
             health: Health::Off,
             indicators: None,
             indicators_sent: None,
@@ -330,6 +334,7 @@ impl Supervisor {
             supervisor.health = Health::Unknown;
         }
         Self::poll_changes(cx);
+        Self::poll_github_leases(cx);
         let supervisor = cx.global_mut::<Self>();
         let watched = supervisor.watchers.get() > 0;
         let interval = if watched { WATCHED } else { UNWATCHED };

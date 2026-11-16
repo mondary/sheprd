@@ -17,6 +17,9 @@ impl Localize for app::Error {
             }
             Self::Control(error) => error.localize(),
             Self::Enroll(error) => error.localize(),
+            Self::GitHubHost { host } => {
+                fl!("error-remote-control-github-host", host = host.as_str())
+            }
             Self::IdleDays => fl!("error-remote-control-idle-days"),
             Self::Io {
                 operation, path, ..

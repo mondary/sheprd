@@ -11,6 +11,8 @@ pub enum Error {
     Control(#[from] crate::control::Error),
     #[error(transparent)]
     Enroll(#[from] super::enroll::Error),
+    #[error("remote.github_hosts has {host}, which is not a host name")]
+    GitHubHost { host: String },
     #[error("remote.device_idle_days must be between 0 (never) and 365")]
     IdleDays,
     #[error("Could not {operation} {}", path.display())]

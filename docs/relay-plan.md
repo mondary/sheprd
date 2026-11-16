@@ -817,9 +817,54 @@ last uses its own domain.
   listens on each over QUIC (no WebSocket fallback yet), reading the pin
   from `/v1/info`. Paired phones learn the route, relays, and tunnel
   identity from `GET /api/relay` and send one dial key and their tunnel key
-  with `POST /api/relay`, over the network or Tailscale. Still to come: a
-  dial key per relay, Sheprd's signed list (`"default"`), the WebSocket
+  with `POST /api/relay`, over the network or Tailscale. A phone that
+  missed that, because the computer turned relays on while the phone was
+  away, gets its keys there through another computer it reaches: it signs
+  them with its device key for the far computer and posts them to the near
+  one (`POST /api/v2/hosts/relay`), whose Sheprd runs
+  `sheprd-remote-control relay-enroll` over SSH on its machines until the
+  one with that fingerprint checks the signature, keeps the keys, and
+  answers with its relays, signed with its CA key (`control::host_relay`).
+  Sheprd, the near daemon, and the phone each check that signature against
+  the pinned fingerprint, so no other host can answer for that computer.
+  Sheprd gives up after eight minutes (`host_relay::CARRY_MS`), before the
+  near daemon stops waiting. The far daemon dates each phone's relay keys
+  and refuses carried keys signed before them, and the phone drops a
+  carried answer once it reached that computer directly, so keys that
+  arrive late never replace newer ones. Still to come: a dial
+  key per relay, Sheprd's signed list (`"default"`), the WebSocket
   fallback, and pairing over a relay from the QR.
+
+#### Carrying a phone's keys through another computer
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Phone
+    participant N as Near computer<br/>(daemon)
+    participant S as Sheprd on the<br/>near computer
+    participant F as Far computer<br/>(daemon)
+    participant R as Relay
+    Note over P,F: The far computer turned on relays while the phone was away,<br/>so the phone never sent it relay keys and cannot reach it.
+    P->>P: Make relay keys, sign them with<br/>the device key for the far computer
+    P->>N: POST /api/v2/hosts/relay (signed keys)
+    N-->>P: pending
+    S->>N: HostRelays (each poll)
+    N-->>S: the phone's request
+    loop The host the pairing names, then each SSH and cloud machine
+        S->>F: ssh: sheprd-remote-control relay-enroll
+        F->>F: Fingerprint mine? Signature by this phone's key?<br/>Keep the keys, name them to the relays
+        F-->>S: relayed (route, relays, tunnel identity),<br/>signed with its CA key, or elsewhere
+        S->>S: Signed by the CA the request pins?<br/>If not, pass over and ask the next host
+    end
+    S->>N: HostRelayed (outcome)
+    P->>N: POST /api/v2/hosts/relay (same request)
+    N-->>P: done: relayed
+    P->>P: Check the CA signature against the<br/>fingerprint pinned at pairing, keep the record
+    P->>R: Dial the far computer's route
+    R->>F: Let the phone's dial key through
+    F-->>P: End-to-end tunnel, then the same API
+```
 
 ### iOS app and other apps
 
@@ -848,7 +893,13 @@ last uses its own domain.
   computer's own addresses, and the daemon answers inside the tunnel with
   the same TLS it serves on the network, so pinning, sign-in, and the live
   socket are unchanged. The proxy carries at most four sessions, the
-  relay's limit per dial key. Still to come: QUIC on iOS, a relay label in
+  relay's limit per dial key. A computer whose link gave up and that has
+  no relay record is reached through another one that is online
+  (`RelayCarrier`): the one that paired it first, else any, each asked again
+  at most every 30 minutes, and none for a day once the computer keeps the
+  keys with no relay or no computer online connects to it. The relays it
+  answers with become its record.
+  Still to come: QUIC on iOS, a relay label in
   the app, pairing over a relay, and the relay for intents, notification
   actions, and the share extension, which still go direct.
 - The PWA cannot use this tunnel: a browser cannot run the handshake inside

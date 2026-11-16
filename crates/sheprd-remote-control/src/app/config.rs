@@ -13,6 +13,7 @@
 //! device_idle_days = 30         # 0 never forgets a device
 //! presence = false             # hold phone alerts while its owner is at this Mac
 //! relays = ["https://relay.example.org"]  # reach this computer from any network
+//! github_hosts = ["ghe.example.com"]       # Enterprise Server hosts besides gh's
 //! ```
 //!
 //! A relay may also carry a label, so lists tell relays apart:
@@ -57,6 +58,10 @@ pub struct RemoteConfig {
     pub enabled: bool,
     /// Permit paired phones to read PRs with this host's GitHub CLI sign-in.
     pub github_cli: bool,
+    /// GitHub Enterprise Server hosts whose remotes phones are told are on
+    /// GitHub, besides github.com, `*.ghe.com`, and the hosts `gh` is signed
+    /// in to; lowercase host names, without a scheme or port.
+    pub github_hosts: Vec<String>,
     /// Whether the daemon keeps serving phones after Sheprd quits.
     pub keep_running: bool,
     pub live_activities: ActivityDetail,
@@ -80,6 +85,7 @@ impl Default for RemoteConfig {
             device_idle_days: DEFAULT_IDLE_DAYS,
             enabled: false,
             github_cli: false,
+            github_hosts: Vec::new(),
             keep_running: true,
             live_activities: ActivityDetail::default(),
             notifications: Privacy::default(),
@@ -99,6 +105,13 @@ impl RemoteConfig {
         }
         if !IDLE_DAYS.contains(&self.device_idle_days) {
             return Err(Error::IdleDays);
+        }
+        if let Some(host) = self
+            .github_hosts
+            .iter()
+            .find(|host| !crate::control::github::valid_host(host))
+        {
+            return Err(Error::GitHubHost { host: host.clone() });
         }
         for relay in &self.relays {
             sheprd_relay::Endpoint::parse(&relay.endpoint).map_err(|source| Error::Relay {

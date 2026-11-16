@@ -5,11 +5,13 @@
 use crate::{
     ansi::{self, Color, Style},
     control::{
+        github::valid_login,
         pull_requests::{PullRequests, Tone, WorkspacePullRequest},
         tags::ComputerTags,
     },
     hub::{self, ChatRow, Layout, Summary},
     load::Load,
+    native::github::{LentHost, checkouts::Checkout, hosts::Recognized},
 };
 use serde::{Deserialize, Serialize};
 use sheprd_chat_protocol::{Cursor, Permission, Status, Transcript};
@@ -34,6 +36,11 @@ pub(crate) struct Home {
     /// promise of network reachability or repository authorization.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) github: Option<bool>,
+    /// The GitHub accounts this computer would lend the device asking
+    /// (`GET /api/v2/github/token`), one per host; none while its switch is
+    /// off, and from older servers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) github_hosts: Vec<LentHost>,
     /// Whether the Herdr daemon is reachable now.
     pub(crate) connected: bool,
     /// Agents that need an answer or finished unseen: the app's badge.
@@ -79,8 +86,59 @@ pub(crate) struct Workspace {
     /// Commits on its branch that no pull request carries yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) unopened_commits: Option<u64>,
+    /// The GitHub repository its checkout is on, for a phone to read
+    /// GitHub itself; absent when its remote is not on a GitHub host, until
+    /// first read, and from older servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) github: Option<WorkspaceGitHub>,
     pub(crate) chats: Vec<Chat>,
     pub(crate) terminals: Vec<Terminal>,
+}
+
+/// The GitHub repository a checkout is on: its `upstream` remote's when
+/// that is on a GitHub host, as a fork's pull requests live there, else its
+/// `origin`'s.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct WorkspaceGitHub {
+    pub(crate) host: String,
+    pub(crate) owner: String,
+    pub(crate) repo: String,
+    /// Absent on a detached HEAD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) branch: Option<String>,
+    /// The commit checked out; absent before the first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) head: Option<String>,
+    /// The owner of the repository the branch is pushed to, such as a
+    /// fork's, so a phone can match a pull request's head; absent when it
+    /// is `owner` or unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) head_owner: Option<String>,
+}
+
+impl WorkspaceGitHub {
+    /// What `checkout` is on, when a remote is on a host `recognized`
+    /// counts as GitHub's.
+    pub(crate) fn of(checkout: &Checkout, recognized: &Recognized) -> Option<Self> {
+        let repository = [&checkout.upstream, &checkout.origin]
+            .into_iter()
+            .flatten()
+            .find(|repository| recognized.is_github(&repository.host))?;
+        let head_owner = checkout
+            .pushed()
+            .filter(|pushed| pushed.host == repository.host)
+            .map(|pushed| pushed.owner.as_str())
+            .filter(|owner| valid_login(owner) && !owner.eq_ignore_ascii_case(&repository.owner))
+            .map(str::to_owned);
+        Some(Self {
+            host: repository.host.clone(),
+            owner: repository.owner.clone(),
+            repo: repository.repo.clone(),
+            branch: checkout.branch.clone(),
+            head: checkout.head.clone(),
+            head_owner,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -390,12 +448,16 @@ fn terminal(terminal: &hub::Terminal) -> Terminal {
 /// Where a home is drawn from; `summaries` holds the chats whose
 /// connection is up, by pane.
 pub(crate) struct Sources<'a> {
+    /// What each folder's checkout is on, as last read.
+    pub(crate) checkouts: &'a HashMap<String, Checkout>,
     pub(crate) computer: &'a str,
     pub(crate) fingerprint: &'a str,
     pub(crate) layout: &'a Layout,
     pub(crate) load: Option<Load>,
     pub(crate) summaries: HashMap<String, Summary>,
     pub(crate) pull_requests: &'a PullRequests,
+    /// The hosts this computer counts as GitHub's.
+    pub(crate) recognized: &'a Recognized,
     pub(crate) shortcuts_ms: u64,
     pub(crate) tags: ComputerTags,
     pub(crate) version: &'a str,
@@ -406,12 +468,14 @@ pub(crate) struct Sources<'a> {
 impl Home {
     pub(crate) fn project(sources: Sources<'_>) -> Self {
         let Sources {
+            checkouts,
             computer,
             fingerprint,
             layout,
             load,
             mut summaries,
             pull_requests,
+            recognized,
             shortcuts_ms,
             tags,
             version,
@@ -435,6 +499,10 @@ impl Home {
                     }
                 }),
                 unopened_commits: unopened_commits(pull_requests, &layout.boot, workspace),
+                github: (!hub::in_wsl(&workspace.id))
+                    .then(|| checkouts.get(&workspace.cwd))
+                    .flatten()
+                    .and_then(|checkout| WorkspaceGitHub::of(checkout, recognized)),
                 chats: workspace
                     .chats
                     .iter()
@@ -448,6 +516,7 @@ impl Home {
             computer: computer.to_owned(),
             fingerprint: fingerprint.to_owned(),
             github: None,
+            github_hosts: Vec::new(),
             connected: layout.connected,
             waiting,
             load,

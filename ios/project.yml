@@ -35,6 +35,9 @@ targets:
       - Shared
     dependencies:
       - package: SheprdRemoteCore
+      # The phone's GitHub client; only the app reads GitHub.
+      - package: SheprdRemoteCore
+        product: SheprdGitHub
       - target: SheprdRemoteWidgets
       - target: SheprdRemoteNotifications
       - target: SheprdRemoteShare

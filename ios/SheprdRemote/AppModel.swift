@@ -440,6 +440,7 @@ final class AppModel {
         collapsed.computers.forget(computer.device)
         shortcuts.offline(computer.device)
         Task { await sessions.forget(computer) }
+        Task { await GitHubReads.reader.tokens.forget(lender: computer.device) }
     }
 
     private func save() {

@@ -19,6 +19,7 @@ fn status(connected: usize) -> Status {
         devices: 2,
         connected,
         relays: Default::default(),
+        github_asks: 0,
     }
 }
 
@@ -32,6 +33,7 @@ fn phone(id: &str, name: &str, connected: bool) -> Device {
         connected,
         via: None,
         hosts: Vec::new(),
+        share_github: true,
     }
 }
 

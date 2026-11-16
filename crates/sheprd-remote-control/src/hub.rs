@@ -783,6 +783,12 @@ fn direct_command_line(program: &Path, agent: Agent) -> String {
     }
 }
 
+/// Whether workspace `id` lives inside a WSL distribution, whose folders
+/// this computer's own processes cannot read.
+pub(crate) fn in_wsl(id: &str) -> bool {
+    sessions::in_wsl(id)
+}
+
 /// A terminal row, for other modules' tests.
 #[cfg(test)]
 pub(crate) fn layout_terminal(tab: &str, label: &str) -> Terminal {

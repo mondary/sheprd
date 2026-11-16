@@ -232,6 +232,23 @@ asks the running daemon to add the phone (`Enroll`). Then it prints the
 machine's fingerprint and addresses. `sheprd-remote-control revoke --device ID`
 undoes it.
 
+A phone also gets its relay keys to a computer it cannot reach through
+one it can (`control::host_relay`, `auth::host_relays`). It signs fresh
+keys with the device key it holds for the far computer and posts them to
+`POST /api/v2/hosts/relay` on the near one, posting the same request again
+to read where it stands. Sheprd takes each request (`HostRelays`) and runs
+`sheprd-remote-control relay-enroll` over SSH, first on the machine the
+phone's pairing names, then on every other one, without installing it
+anywhere. The machine whose fingerprint the request names checks the
+signature against the phone's own key, keeps the keys, and answers with its
+relays, signed with its CA key over the request and the answer
+(`RelayEnroll`). Sheprd passes over an answer whose certificate does not
+hash to the request's fingerprint or whose signature does not check out,
+and reports the first one that does (`HostRelayed`); this daemon and the
+phone check it again. Because
+the phone signs, the near computer cannot attach keys to a device it does
+not hold, and this works for a computer the phone paired directly too.
+
 The pairing QR prefers a Tailscale address when one is available, then a LAN
 address. The desktop dialog highlights the Tailscale connection and reveals
 alternatives under **Other addresses**. Each address names its interfaces on
@@ -284,7 +301,10 @@ This authorizes every paired phone to read PR information for the workspaces
 that computer lists. A paired SSH/cloud machine uses **its own** `gh` sign-in;
 enrollment does not copy the desktop's GitHub credential or enable this option.
 The daemon reads `gh auth token --hostname github.com` through the existing
-bounded credential reader. It never saves the token or sends it to a phone.
+bounded credential reader. These reads never save the token or send it to a
+phone. Lending a sign-in to the iPhone app (`GET /api/v2/github/token`) is a
+separate, per-device choice, the **Share GitHub sign-in** switch, and does
+not depend on this option (`docs/ios-github-plan.md`).
 Remove the option and restart the service to disable standalone reads; `gh auth
 logout` revokes use of the CLI sign-in after cached answers expire.
 

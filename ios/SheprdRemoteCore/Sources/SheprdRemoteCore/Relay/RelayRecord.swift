@@ -54,6 +54,12 @@ public struct RelayRecord: Codable, Hashable, Sendable {
     /// A record for what `info` says, with fresh keys for this phone; nil
     /// when `info` is not a relay answer.
     public static func make(from info: API.RelayInfo) -> RelayRecord? {
+        make(from: info, keys: RelayKeyPair())
+    }
+
+    /// A record for what `info` says, with keys this phone already sent;
+    /// nil when `info` is not a relay answer.
+    public static func make(from info: API.RelayInfo, keys: RelayKeyPair) -> RelayRecord? {
         guard let route = Base64URL.decode(info.route), route.count == 32,
               let identity = Base64URL.decode(info.identity),
               (try? Tunnel.Identity(bytes: identity)) != nil
@@ -64,8 +70,8 @@ public struct RelayRecord: Codable, Hashable, Sendable {
             relays: relays,
             route: route,
             identity: identity,
-            dialKey: P256.Signing.PrivateKey().rawRepresentation,
-            tunnelKey: Curve25519.KeyAgreement.PrivateKey().rawRepresentation,
+            dialKey: keys.dialKey,
+            tunnelKey: keys.tunnelKey,
             listenerRtt: info.rttMs,
             labels: labels(from: info)
         )
@@ -109,13 +115,7 @@ public struct RelayRecord: Codable, Hashable, Sendable {
 
     /// What `POST /api/relay` sends: the public halves, base64url.
     public var enrollment: API.RelayKeys? {
-        guard let dial = try? P256.Signing.PrivateKey(rawRepresentation: dialKey),
-              let tunnel = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: tunnelKey)
-        else { return nil }
-        return API.RelayKeys(
-            dial: Base64URL.encode(dial.publicKey.compressedRepresentation),
-            tunnel: Base64URL.encode(tunnel.publicKey.rawRepresentation)
-        )
+        RelayKeyPair(dialKey: dialKey, tunnelKey: tunnelKey).enrollment
     }
 
     /// Whether `info` still names the same computer and relays, so the
@@ -216,5 +216,43 @@ extension API {
     public struct RelayKeys: Codable, Equatable, Sendable {
         public let dial: String
         public let tunnel: String
+
+        public init(dial: String, tunnel: String) {
+            self.dial = dial
+            self.tunnel = tunnel
+        }
+    }
+}
+
+/// This phone's private keys for one computer's relays (raw), made before
+/// the phone knows the relays when another computer carries them there.
+public struct RelayKeyPair: Hashable, Sendable {
+    /// The dial key (P-256).
+    public let dialKey: Data
+    /// The tunnel static key (X25519).
+    public let tunnelKey: Data
+
+    /// Fresh keys.
+    public init() {
+        self.init(
+            dialKey: P256.Signing.PrivateKey().rawRepresentation,
+            tunnelKey: Curve25519.KeyAgreement.PrivateKey().rawRepresentation
+        )
+    }
+
+    public init(dialKey: Data, tunnelKey: Data) {
+        self.dialKey = dialKey
+        self.tunnelKey = tunnelKey
+    }
+
+    /// The public halves, base64url, as a computer keeps them.
+    public var enrollment: API.RelayKeys? {
+        guard let dial = try? P256.Signing.PrivateKey(rawRepresentation: dialKey),
+              let tunnel = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: tunnelKey)
+        else { return nil }
+        return API.RelayKeys(
+            dial: Base64URL.encode(dial.publicKey.compressedRepresentation),
+            tunnel: Base64URL.encode(tunnel.publicKey.rawRepresentation)
+        )
     }
 }

@@ -738,6 +738,7 @@ impl SheprdWindow {
             cx.notify();
         }
         self.publish_remote_pull_requests(cx);
+        self.publish_github_account(cx);
         self.sync_remote_hosts(window, cx);
         self.reach_device_tags(cx);
         self.update_merged_cleanup(window, cx);

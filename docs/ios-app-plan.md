@@ -388,6 +388,41 @@ the daemon asks Git in the workspace's listed folder itself
   /api/chat/{pane}/command`, after showing it and asking; the daemon does
   not send it anywhere itself.
 
+For a phone that reads GitHub itself (`docs/ios-github-plan.md`), `home`
+also says which repository each workspace is on and which accounts this
+computer lends the device asking:
+
+- Each workspace gains `"github": {"host", "owner", "repo", "branch"?,
+  "head"?, "head_owner"?}`: its `upstream` remote's repository when that
+  is on a GitHub host, as a fork's pull requests live there, else its
+  `origin`'s. SSH (`git@host:o/r`), `ssh://`, and `https://` remotes are
+  read; a user name or token in the URL is dropped. `branch` is absent on
+  a detached HEAD and `head`, the commit checked out, before the first
+  commit. `head_owner` is the owner of the repository the branch is pushed
+  to (the remote `branch.<name>.remote` names, else `origin`), so a fork's
+  pull request is matched by `head_owner:branch`; it is present only when
+  it is a GitHub login on the same host that differs, ignoring case, from
+  `owner`. The field is absent when neither remote
+  is on a GitHub host: github.com, a GHE.com `*.ghe.com` host, a host `gh`
+  is signed in to on the computer, or one listed in `[remote]
+  github_hosts`. The daemon reads the checkouts with Git off the request
+  path, at most 256 folders, every 30 s while a phone looks.
+- `"github_hosts": [{"host", "login"}]` at the top: Sheprd's main
+  github.com account while Sheprd is open, then each host `gh` is signed in
+  to. Absent while the device's **Share GitHub sign-in** switch is off.
+- `GET /api/v2/github/token?host=HOST` answers `{"host", "login", "token",
+  "expires_at"?, "source": "sheprd"|"gh"}`. For github.com, Sheprd's main
+  account comes first: the daemon asks Sheprd (`Request::GitHubLeaseAsks`,
+  answered with `Request::GitHubLease` once Sheprd has checked the token
+  with GitHub), waiting up to 15 s. Otherwise, and for Enterprise hosts,
+  the daemon runs `gh auth token --hostname HOST`; `gh` tokens carry no
+  `expires_at`. Sheprd alone renews its own tokens, never the daemon; the
+  phone asks again on a 401. 403 while the device's switch is off, 404
+  when no account is there for the host, 400 for a host that is not a host
+  name, 429 past five asks a device makes in a minute or so, and 504 when
+  Sheprd did not answer in time and `gh` had nothing. The token is never
+  logged.
+
 The daemon cannot call Sheprd, so a question waits in a bounded mailbox.
 While a phone is connected, Sheprd holds one `Request::ChangeAsks` open on
 the control socket, answers each question on a background thread, and

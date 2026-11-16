@@ -4,6 +4,8 @@
 //! `[remote]` change does.
 // i18n: migrated
 
+mod deploy;
+
 use super::{Edit, SettingsWindow, ui};
 use crate::{
     config::{
@@ -319,6 +321,35 @@ impl SettingsWindow {
         .when(idle, |button| {
             button.on_click(cx.listener(|this, _, _, cx| this.add_remote_relay(cx)))
         });
+        let field = div()
+            .debug_selector(|| "remote-relay-address".into())
+            .children(self.remote.relay.clone());
+        let none = relays.is_empty();
+        let list = div().flex().flex_col().child(
+            ui::row(theme, "remote-relays", fl!("settings-remote-relays")).description(if none {
+                fl!("settings-remote-relays-none")
+            } else {
+                fl!("settings-remote-relays-note")
+            }),
+        );
+        // No relay yet: deploying one and adding one sit side by side.
+        // Once one is listed, Add keeps its row and deploying moves under it.
+        let list = if none {
+            list.child(self.relay_start(field, add))
+        } else {
+            list.children(rows)
+                .child(
+                    ui::row(theme, "remote-relay-add", fl!("settings-remote-relay-add"))
+                        .description(if self.remote.relay_invalid {
+                            fl!("settings-remote-relay-invalid", example = PLACEHOLDER)
+                        } else {
+                            fl!("settings-remote-relay-add-note")
+                        })
+                        .control(field.w(px(260.)).flex_none())
+                        .control(add),
+                )
+                .child(self.relay_deploy_row())
+        };
         div()
             .flex()
             .flex_col()
@@ -327,32 +358,7 @@ impl SettingsWindow {
                 &fl!("settings-remote-section-relays"),
                 None,
             ))
-            .child(
-                ui::row(theme, "remote-relays", fl!("settings-remote-relays")).description(
-                    if relays.is_empty() {
-                        fl!("settings-remote-relays-none")
-                    } else {
-                        fl!("settings-remote-relays-note")
-                    },
-                ),
-            )
-            .children(rows)
-            .child(
-                ui::row(theme, "remote-relay-add", fl!("settings-remote-relay-add"))
-                    .description(if self.remote.relay_invalid {
-                        fl!("settings-remote-relay-invalid", example = PLACEHOLDER)
-                    } else {
-                        fl!("settings-remote-relay-add-note")
-                    })
-                    .control(
-                        div()
-                            .debug_selector(|| "remote-relay-address".into())
-                            .w(px(260.))
-                            .flex_none()
-                            .children(self.remote.relay.clone()),
-                    )
-                    .control(add),
-            )
+            .child(list)
             .child(self.remote_public_relays(cx))
     }
 

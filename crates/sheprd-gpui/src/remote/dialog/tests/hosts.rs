@@ -73,6 +73,7 @@ fn allowing_a_phone_allows_the_machines_left_ticked(cx: &mut TestAppContext) {
         allow: true,
         code: "428913".into(),
         hosts: vec![HostId("ssh:1".into())],
+        share_github: true,
     }));
 }
 

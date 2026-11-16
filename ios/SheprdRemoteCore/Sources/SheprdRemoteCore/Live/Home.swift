@@ -33,13 +33,17 @@ public struct Home: Codable, Hashable, Sendable {
     /// fetched only when it changes (`ShortcutSync`); older computers leave
     /// it out.
     public var shortcutsMs: UInt64?
+    /// The GitHub accounts this computer lends this phone, one per host
+    /// (`GitHubLeases`); older computers leave it out, and lend none.
+    public var githubHosts: [GitHubAccount]?
 
     enum CodingKeys: String, CodingKey {
         case api, computer, fingerprint, github, connected, waiting, load, working, version, workspaces, tags
         case shortcutsMs = "shortcuts_ms"
+        case githubHosts = "github_hosts"
     }
 
-    public init(api: Int? = nil, computer: String, fingerprint: String, connected: Bool, waiting: Int, load: Load? = nil, working: Int? = nil, version: String? = nil, workspaces: [Workspace], tags: Tags? = nil, shortcutsMs: UInt64? = nil) {
+    public init(api: Int? = nil, computer: String, fingerprint: String, connected: Bool, waiting: Int, load: Load? = nil, working: Int? = nil, version: String? = nil, workspaces: [Workspace], tags: Tags? = nil, shortcutsMs: UInt64? = nil, githubHosts: [GitHubAccount]? = nil) {
         self.api = api
         self.computer = computer
         self.fingerprint = fingerprint
@@ -51,6 +55,7 @@ public struct Home: Codable, Hashable, Sendable {
         self.workspaces = workspaces
         self.tags = tags
         self.shortcutsMs = shortcutsMs
+        self.githubHosts = githubHosts
     }
 
     /// A computer's tags and when they were last edited, also the body and
@@ -105,12 +110,16 @@ public struct Home: Codable, Hashable, Sendable {
         public var unopenedCommits: Int?
         public var chats: [ChatRow]
         public var terminals: [TerminalRow]
+        /// The GitHub repository and branch its pull request would be on,
+        /// which the phone reads directly with a leased token; older
+        /// computers, and checkouts of other hosts, leave it out.
+        public var github: GitHubRepository? = nil
 
         /// Its pull request is merged, so the work here is done.
         public var merged: Bool { pullRequest?.tone == .merged }
 
         enum CodingKeys: String, CodingKey {
-            case id, label, branch, cwd, worktree, session, chats, terminals
+            case id, label, branch, cwd, worktree, session, chats, terminals, github
             case pullRequest = "pull_request"
             case unopenedCommits = "unopened_commits"
         }
@@ -135,6 +144,12 @@ public struct Home: Codable, Hashable, Sendable {
         public var number: UInt64
         public var url: String
         public var tone: Tone
+
+        public init(number: UInt64, url: String, tone: Tone) {
+            self.number = number
+            self.url = url
+            self.tone = tone
+        }
 
         /// What the badge says, before a theme colors it.
         public enum Tone: String, Codable, Hashable, Sendable {

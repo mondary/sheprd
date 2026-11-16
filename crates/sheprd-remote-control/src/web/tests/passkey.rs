@@ -141,6 +141,7 @@ async fn a_browser_on_the_web_name_pairs_and_signs_in_with_a_passkey() {
             allow: true,
             code,
             hosts: Vec::new(),
+            share_github: true,
         },
     );
     let device = state.auth().devices().list(|_| false)[0].id.0.clone();

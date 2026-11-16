@@ -19,6 +19,7 @@ use std::{
 
 mod addresses;
 mod hosts;
+mod share_github;
 
 /// What keeps this computer advertised for nearby pairing.
 type NearbyAdvert = nearby::Advert;
@@ -574,6 +575,7 @@ impl SheprdWindow {
                     .child(spaced(code)),
             )
             .children(self.pairing_hosts(!waiting, cx))
+            .children(self.pairing_share_github(!waiting, cx))
             .child(
                 div()
                     .flex()

@@ -19,6 +19,7 @@ mod en_xa;
 mod hosts;
 mod keyboard;
 mod networks;
+mod share_github;
 
 fn on() -> RemoteConfig {
     RemoteConfig {
@@ -188,6 +189,7 @@ fn a_phone_scans_claims_and_is_allowed(cx: &mut TestAppContext) {
         allow: true,
         code: "428913".into(),
         hosts: Vec::new(),
+        share_github: true,
     }));
     // A finished pairing is not cancelled on close.
     cx.simulate_keystrokes("escape");
@@ -262,6 +264,7 @@ fn pixel() -> Device {
         connected: true,
         via: None,
         hosts: Vec::new(),
+        share_github: true,
     }
 }
 

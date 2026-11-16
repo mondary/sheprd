@@ -478,7 +478,7 @@ fn command(cwd: &Path, args: &[&str]) -> Command {
 }
 
 /// Git's output for `args` in `cwd`, when it succeeded.
-pub(super) fn git(cwd: &Path, args: &[&str]) -> std::io::Result<String> {
+pub(crate) fn git(cwd: &Path, args: &[&str]) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&git_bytes(cwd, args)?).into_owned())
 }
 

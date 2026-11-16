@@ -1,6 +1,7 @@
 //! Creating a database's directory and file privately: owned by this user,
 //! not a link, and closed to the group and others, since issue bodies, run
-//! messages, alerts, and paths go in.
+//! messages, alerts, agent memory, and paths go in. The orchestrator's and
+//! agent memory's databases share this policy.
 
 use std::{
     fs, io,

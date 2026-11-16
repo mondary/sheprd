@@ -8,6 +8,7 @@ mod browser;
 mod chat;
 mod exec;
 mod hosts;
+mod memory;
 mod mods;
 mod remote;
 mod settings;
@@ -25,6 +26,7 @@ pub use exec::ExecCommand;
 pub use hosts::{
     AutomationCommand, CloudCommand, HostCommand, PortsCommand, PrCommand, SecurityCommand,
 };
+pub use memory::{MemoryAdd, MemoryCommand};
 pub use mods::ModCommand;
 pub use remote::RemoteCommand;
 pub use settings::{
@@ -69,6 +71,7 @@ pub enum ControlCommand {
     Chat(ChatCommand),
     Px0,
     Notes(NotesCommand),
+    Memory(MemoryCommand),
     Worktree(WorktreeCommand),
     /// Every kind of note the user sent this pane: page, review, terminal.
     Feedback {
@@ -180,6 +183,10 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ),
     ("px0", "Open px0 on the caller's local checkout"),
     ("notes", "Notes kept on worktrees"),
+    (
+        "memory",
+        "What agents learned about a repository, shared by its worktrees",
+    ),
     (
         "worktree",
         "List app-kept worktrees, open their dialogs, or mute notifications",
@@ -361,6 +368,7 @@ fn command(family: &'static str, args: &mut Args) -> Result<ControlCommand, CliE
             ControlCommand::Px0
         }
         "notes" => ControlCommand::Notes(work::notes(args)?),
+        "memory" => ControlCommand::Memory(memory::memory(args)?),
         "worktree" => ControlCommand::Worktree(work::worktree(args)?),
         "feedback" => ControlCommand::Feedback {
             wait: wait_option(args, "--wait")?,

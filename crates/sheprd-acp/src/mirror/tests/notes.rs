@@ -1,6 +1,7 @@
 //! A chat's log, mirrored, shows what the person wrote, not Sheprd's notes.
 
 use super::*;
+use crate::context::{Context, Facts, Prompts};
 
 fn said(text: &str) -> Entry {
     Entry {
@@ -16,9 +17,13 @@ fn said(text: &str) -> Entry {
 fn notes_sent_to_the_agent_stay_hidden_in_a_mirror() {
     let with_note = |words: &str| {
         let mut transcript = Transcript::new("Claude".to_owned());
-        let note = crate::context::Context::new(Some("Be brief.".to_owned()), Default::default())
-            .before(None)
-            .unwrap();
+        let note = Context::new(
+            Prompts::with_instructions("Be brief."),
+            Facts::default(),
+            Default::default(),
+        )
+        .before(None)
+        .unwrap();
         transcript.entries = vec![said(&format!("{note}\n{words}"))];
         transcript
     };

@@ -10,6 +10,7 @@ mod enroll;
 mod github;
 mod idle;
 mod relay_access;
+mod relay_enroll;
 mod relay_options;
 mod shutdown;
 

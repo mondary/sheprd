@@ -28,6 +28,9 @@ fn every_app_variant_has_a_message() {
     let path = PathBuf::from("/tmp/remote/control.plist");
     let mut errors = vec![
         app::Error::Control(control::Error::NoAnswer),
+        app::Error::GitHubHost {
+            host: "https://ghe.example.com".into(),
+        },
         app::Error::IdleDays,
         app::Error::NoStateDir,
         app::Error::PairingAddress,

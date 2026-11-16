@@ -13,6 +13,7 @@ mod control_commands;
 mod language;
 mod links;
 mod local_ports;
+mod memory;
 mod menu_bar;
 mod mods;
 mod open_command;

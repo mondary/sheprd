@@ -41,6 +41,7 @@ fn health(transparency: Transparency) -> Health {
         chats: 0,
         devices: 0,
         connected: 0,
+        github_asks: 0,
         relays: [(HOME.to_owned(), relay)].into(),
     })
 }
