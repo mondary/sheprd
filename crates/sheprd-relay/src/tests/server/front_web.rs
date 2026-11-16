@@ -136,6 +136,29 @@ async fn a_browser_reaches_the_computer_byte_for_byte() {
 }
 
 #[tokio::test]
+async fn a_new_listener_on_the_route_ends_the_old_ones_browsers() {
+    let hub = hub(Limits::default());
+    let address = front(&hub).await;
+    let (mut registration, label) = listening(&hub, 6);
+
+    let mut browser = TcpStream::connect(address).await.unwrap();
+    let hello = real_hello(&label.host(RELAY), &[]);
+    browser.write_all(&hello).await.unwrap();
+    let mut computer = accept_web(&hub, &mut registration).await;
+    let mut received = vec![0; hello.len()];
+    timeout(WAIT, computer.read_exact(&mut received))
+        .await
+        .unwrap()
+        .unwrap();
+
+    // The computer reconnects, with web access off this time.
+    let route = RouteId::of(signing_key(6).verifying_key());
+    let replaced = hub.register(route, HOME).unwrap();
+    assert!(closed(&mut browser).await);
+    assert!(replaced.set_web(false));
+}
+
+#[tokio::test]
 async fn without_web_access_the_name_is_closed_like_any_other() {
     let hub = hub(Limits::default());
     let address = front(&hub).await;

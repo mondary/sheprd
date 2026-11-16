@@ -38,12 +38,7 @@ impl Hub {
         }
         listener.web = false;
         state.web.remove(&label);
-        let ids = state.on_route.get(&route).into_iter().flatten();
-        for live in ids.filter_map(|id| state.sessions.get(id)) {
-            if live.caller == Caller::Web {
-                live.revoke.notify_one();
-            }
-        }
+        state.end_web_sessions(&route);
         true
     }
 

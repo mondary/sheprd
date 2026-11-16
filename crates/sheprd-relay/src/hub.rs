@@ -113,6 +113,16 @@ struct Buffered {
 const BUFFER_SHARE: u64 = 4;
 
 impl State {
+    /// Ends `route`'s browser sessions, leaving its devices' alone.
+    fn end_web_sessions(&self, route: &RouteId) {
+        let ids = self.on_route.get(route).into_iter().flatten();
+        for live in ids.filter_map(|id| self.sessions.get(id)) {
+            if live.caller == Caller::Web {
+                live.revoke.notify_one();
+            }
+        }
+    }
+
     /// Removes `route`'s listener, giving back its address's count and
     /// its web name.
     fn remove_listener(&mut self, route: &RouteId) -> Option<Listener> {
@@ -428,8 +438,11 @@ impl Hub {
             }
         }
         let replacing = replaced.is_some();
-        // A new listener starts without web access, whatever the old had.
+        // A new listener starts without web access, whatever the old had,
+        // and the old one's browsers go with it: they reached a computer
+        // that may no longer offer web access.
         state.web.remove(&WebLabel::of(&route));
+        state.end_web_sessions(&route);
         state.listeners.insert(
             route,
             Listener {
