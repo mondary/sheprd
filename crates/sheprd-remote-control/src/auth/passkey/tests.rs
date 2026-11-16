@@ -210,3 +210,26 @@ fn a_signature_over_other_data_is_refused() {
     assertion.client_data = encode(&client("webauthn.get").json(&[8; 32]));
     assert!(verify(&passkey, HOST, &[8; 32], &assertion).is_err());
 }
+
+#[test]
+fn signatures_with_either_s_verify() {
+    use p256::ecdsa::{Signature, signature::Signer as _};
+    let authenticator = Authenticator::new(1);
+    let passkey = registered(&authenticator);
+    let nonce = [9; 32];
+    let data = authenticator.head(HOST, VERIFIED);
+    let client_data = client("webauthn.get").json(&nonce);
+    let signed = [&data[..], &sha256(&[&client_data])].concat();
+    let signature: Signature = authenticator.key.sign(&signed);
+    let (r, s) = signature.split_scalars();
+    // Authenticators do not normalize S, so both forms are real.
+    let flipped = Signature::from_scalars(r.to_bytes(), (-*s).to_bytes()).unwrap();
+    for signature in [signature, flipped] {
+        let assertion = Assertion {
+            client_data: encode(&client_data),
+            authenticator_data: encode(&data),
+            signature: encode(signature.to_der().as_bytes()),
+        };
+        verify(&passkey, HOST, &nonce, &assertion).unwrap();
+    }
+}
