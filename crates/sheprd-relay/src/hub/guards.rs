@@ -1,7 +1,7 @@
 //! The guards that hold the hub's slots: each gives its slot back when
 //! dropped, however its task ends.
 
-use super::{Accepted, Hub, Incoming, PAIRING_SESSION, Traffic};
+use super::{Accepted, Caller, Hub, Incoming, PAIRING_SESSION, Traffic};
 use crate::{
     RouteId, SessionId,
     bucket::{Limiter, Rate},
@@ -129,6 +129,12 @@ impl Registration {
         self.hub
             .add_pairing_key(self.route, self.generation, key, lifetime)
     }
+
+    /// Lets browsers reach the listener at its web name, or stops them,
+    /// ending their sessions; `false` when another route holds the name.
+    pub fn set_web(&self, on: bool) -> bool {
+        self.hub.set_web(self.route, self.generation, on)
+    }
 }
 
 impl Drop for Registration {
@@ -155,8 +161,7 @@ pub struct Slot {
     /// The dialer's and listener's addresses, in full.
     pub(super) dialer: IpAddr,
     pub(super) listener: IpAddr,
-    pub(super) key: Key,
-    pub(super) pairing: bool,
+    pub(super) caller: Caller,
     pub(super) route: RouteId,
 }
 
@@ -164,16 +169,14 @@ impl Slot {
     pub(super) fn new(
         hub: Arc<Hub>,
         route: RouteId,
-        key: Key,
-        pairing: bool,
+        caller: Caller,
         (dialer, listener): (IpAddr, IpAddr),
     ) -> Self {
         Self {
+            caller,
             dialer,
             hub,
             listener,
-            key,
-            pairing,
             route,
         }
     }
@@ -184,7 +187,10 @@ impl Drop for Slot {
         let mut state = self.hub.state();
         state.slots = state.slots.saturating_sub(1);
         state.dialers.remove(self.dialer);
-        state.keys.remove(&self.key);
+        match self.caller {
+            Caller::Device { key, .. } => state.keys.remove(&key),
+            Caller::Web => state.web_routes.remove(&self.route),
+        }
         if let Some(held) = state.routes.get_mut(&self.route) {
             *held = held.saturating_sub(1);
             if *held == 0 {
@@ -276,7 +282,7 @@ impl Session {
     #[must_use]
     pub fn bounds(&self) -> Bounds {
         let mut bounds = self.hub.limits.bounds();
-        if self.slot.pairing {
+        if self.slot.caller.pairing() {
             bounds.longest = bounds.longest.min(PAIRING_SESSION);
         }
         bounds

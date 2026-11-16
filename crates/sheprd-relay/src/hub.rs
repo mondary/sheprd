@@ -12,12 +12,13 @@ pub mod access;
 mod guards;
 mod rates;
 pub(crate) mod tally;
+mod web;
 
 pub use access::Access;
 pub use guards::{Buffer, Permit, Registration, Session, Slot, Unclaimed, Waiting};
 
 use crate::{
-    Limits, RouteId, SessionId,
+    Limits, RouteId, SessionId, WebLabel,
     bucket::{Outcome, Throttle, source_key},
     guard::Guard,
     metrics::{Direction, Gauge, Kind, Metrics, Offense, Refused},
@@ -85,6 +86,10 @@ struct State {
     /// Each route's open sessions, so a change of its dial keys looks at
     /// those only.
     on_route: HashMap<RouteId, HashSet<u64>>,
+    /// The routes browsers may reach, by web label.
+    web: HashMap<WebLabel, RouteId>,
+    /// Web dials and sessions held against each route.
+    web_routes: Counts<RouteId>,
     pending: HashMap<SessionId, Pending>,
     /// Dials and sessions held against each route, for its limit.
     routes: HashMap<RouteId, usize>,
@@ -106,10 +111,14 @@ struct Buffered {
 const BUFFER_SHARE: u64 = 4;
 
 impl State {
-    /// Removes `route`'s listener, giving back its address's count.
+    /// Removes `route`'s listener, giving back its address's count and
+    /// its web name.
     fn remove_listener(&mut self, route: &RouteId) -> Option<Listener> {
         let listener = self.listeners.remove(route)?;
         self.listening.remove(listener.address);
+        if listener.web {
+            self.web.remove(&WebLabel::of(route));
+        }
         Some(listener)
     }
 }
@@ -125,14 +134,35 @@ struct Listener {
     token: access::Admitted,
     incoming: mpsc::Sender<Incoming>,
     pairing: Vec<(Key, Instant)>,
+    /// Whether browsers may reach it at its web name.
+    web: bool,
+}
+
+/// Who a dial or session comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Caller {
+    /// A device, by the dial key it proved; `pairing` when that key was a
+    /// one-dial pairing key.
+    Device { key: Key, pairing: bool },
+    /// A browser at the listener's web name. No key is involved: the
+    /// computer ends its TLS and authenticates it.
+    Web,
+}
+
+impl Caller {
+    /// Whether this is a pairing dial, which runs shorter.
+    #[must_use]
+    pub const fn pairing(self) -> bool {
+        matches!(self, Self::Device { pairing: true, .. })
+    }
 }
 
 /// A dial the listener is told about: its id, to accept it over a
-/// WebSocket, and the key it was signed with, so the computer knows which
-/// device calls before the end-to-end handshake.
+/// WebSocket, and who calls, so the computer knows which device it is
+/// before the end-to-end handshake, or that a browser's TLS follows.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Incoming {
-    pub key: Key,
+    pub caller: Caller,
     pub session: SessionId,
 }
 
@@ -158,9 +188,8 @@ struct Live {
     /// Both sides' addresses, in full, so a manual ban of one IPv6 host
     /// matches; automatic bans compare the keys limits use.
     dialer: IpAddr,
-    key: Key,
+    caller: Caller,
     listener: IpAddr,
-    pairing: bool,
     revoke: Arc<Notify>,
     route: RouteId,
     started: Instant,
@@ -206,6 +235,8 @@ pub struct SessionRow {
     pub pairing: bool,
     pub route: String,
     pub seconds: u64,
+    /// A browser's connection to the computer's web name.
+    pub web: bool,
 }
 
 impl Hub {
@@ -377,6 +408,8 @@ impl Hub {
             }
         }
         let replacing = replaced.is_some();
+        // A new listener starts without web access, whatever the old had.
+        state.web.remove(&WebLabel::of(&route));
         state.listeners.insert(
             route,
             Listener {
@@ -386,6 +419,7 @@ impl Hub {
                 token,
                 incoming: sender,
                 pairing: Vec::new(),
+                web: false,
             },
         );
         drop(state);
@@ -422,7 +456,12 @@ impl Hub {
             return;
         };
         for live in ids.iter().filter_map(|id| state.sessions.get(id)) {
-            if !live.pairing && !allowed.contains(&live.key) {
+            if let Caller::Device {
+                key,
+                pairing: false,
+            } = live.caller
+                && !allowed.contains(&key)
+            {
                 live.revoke.notify_one();
             }
         }
@@ -461,7 +500,6 @@ impl Hub {
         dialer: IpAddr,
     ) -> crate::Result<Result<Waiting, DialRefusal>> {
         let session = SessionId::random()?;
-        let (accepted, receiver) = oneshot::channel();
         let mut state = self.state();
         let Some(listener) = state.listeners.get_mut(&route) else {
             return Ok(Err(DialRefusal::Offline));
@@ -476,12 +514,42 @@ impl Hub {
         if pairing && pairing_index.is_none() {
             return Ok(Err(DialRefusal::Unauthorized));
         }
+        if state.keys.get(&key) >= self.limits.max_sessions_per_key {
+            return Ok(Err(DialRefusal::Busy));
+        }
+        let caller = Caller::Device { key, pairing };
+        let waiting = match self.wait(&mut state, route, caller, dialer, session)? {
+            Ok(waiting) => waiting,
+            Err(refusal) => return Ok(Err(refusal)),
+        };
+        state.keys.add(key);
+        if let (true, Some(index), Some(listener)) =
+            (pairing, pairing_index, state.listeners.get_mut(&route))
+        {
+            listener.pairing.swap_remove(index);
+        }
+        drop(state);
+        Ok(Ok(waiting))
+    }
+
+    /// Holds a slot on `route` for `caller` and tells its listener, unless
+    /// the route, the relay, or the dialing address is full: the steps
+    /// every kind of dial shares, under the one lock.
+    fn wait(
+        self: &Arc<Self>,
+        state: &mut State,
+        route: RouteId,
+        caller: Caller,
+        dialer: IpAddr,
+        session: SessionId,
+    ) -> crate::Result<Result<Waiting, DialRefusal>> {
+        let Some(listener) = state.listeners.get(&route) else {
+            return Ok(Err(DialRefusal::Offline));
+        };
         let incoming = listener.incoming.clone();
         let listener_address = listener.address;
         let on_route = state.routes.get(&route).copied().unwrap_or(0);
-        if on_route >= self.limits.max_sessions_per_route
-            || state.slots >= self.limits.max_sessions
-            || state.keys.get(&key) >= self.limits.max_sessions_per_key
+        if on_route >= self.limits.max_sessions_per_route || state.slots >= self.limits.max_sessions
         {
             return Ok(Err(DialRefusal::Busy));
         }
@@ -491,33 +559,21 @@ impl Hub {
         {
             return Ok(Err(DialRefusal::Busy));
         }
-        if incoming.try_send(Incoming { key, session }).is_err() {
+        if incoming.try_send(Incoming { caller, session }).is_err() {
             state.dialers.remove(dialer);
             return Ok(Err(DialRefusal::Busy));
         }
-        state.keys.add(key);
-        if let (true, Some(index), Some(listener)) =
-            (pairing, pairing_index, state.listeners.get_mut(&route))
-        {
-            listener.pairing.swap_remove(index);
-        }
+        let (accepted, receiver) = oneshot::channel();
         state.pending.insert(session, Pending { accepted });
         state.routes.insert(route, on_route + 1);
         state.slots += 1;
         // Raised before the lock goes, so an `accept` racing in cannot
         // lower it first and leave it a count too high.
         self.metrics.raise(Gauge::Pending);
-        drop(state);
         Ok(Ok(Waiting {
             accepted: receiver,
             pending: Unclaimed::new(Arc::clone(self), session),
-            slot: Slot::new(
-                Arc::clone(self),
-                route,
-                key,
-                pairing,
-                (dialer, listener_address),
-            ),
+            slot: Slot::new(Arc::clone(self), route, caller, (dialer, listener_address)),
         }))
     }
 
@@ -548,11 +604,14 @@ impl Hub {
         if self.guard.banned(slot.dialer, now) || self.guard.evicts(slot.listener, now) {
             return None;
         }
-        let allowed = slot.pairing
-            || state
-                .listeners
-                .get(&slot.route)
-                .is_some_and(|listener| listener.dial_keys.contains(&slot.key));
+        let listener = state.listeners.get(&slot.route);
+        let allowed = match slot.caller {
+            Caller::Device { pairing: true, .. } => true,
+            Caller::Device { key, .. } => {
+                listener.is_some_and(|listener| listener.dial_keys.contains(&key))
+            }
+            Caller::Web => listener.is_some_and(|listener| listener.web),
+        };
         if !allowed {
             return None;
         }
@@ -562,9 +621,8 @@ impl Hub {
             Live {
                 ban: Arc::clone(&ban),
                 dialer: slot.dialer,
-                key: slot.key,
+                caller: slot.caller,
                 listener: slot.listener,
-                pairing: slot.pairing,
                 revoke: Arc::clone(&revoke),
                 route: slot.route,
                 started: Instant::now(),
@@ -712,9 +770,10 @@ impl Hub {
             .map(|live| SessionRow {
                 bytes_from_dialer: live.traffic.from_dialer.load(Relaxed),
                 bytes_from_listener: live.traffic.from_listener.load(Relaxed),
-                pairing: live.pairing,
+                pairing: live.caller.pairing(),
                 route: live.route.short(),
                 seconds: live.started.elapsed().as_secs(),
+                web: live.caller == Caller::Web,
             })
             .collect();
         drop(state);

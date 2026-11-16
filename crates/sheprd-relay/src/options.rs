@@ -68,6 +68,8 @@ Every option is optional, and each can also be set as a RELAY_* variable
                                  (default 64); a /24 or /48, 16 times this
   --max-sessions-per-key N       Per dial key (default 4)
   --max-sessions-per-route N     Per computer (default 32)
+  --max-web-sessions-per-route N Browser connections per computer's web name,
+                                 out of those (default 16)
   --max-buffer BYTES             Bytes held for QUIC peers at once, across
                                  connections (default 512MiB)
   --session-bandwidth BYTES      Per session, each way, per second; 0 is
@@ -150,6 +152,7 @@ pub const SETTINGS: &[(&str, Kind)] = &[
     ("max-sessions-per-key", Kind::Count),
     ("max-sessions-per-route", Kind::Count),
     ("max-transfer-per-hour", Kind::Bytes),
+    ("max-web-sessions-per-route", Kind::Count),
     ("metrics", Kind::Address),
     ("metrics-token-file", Kind::File),
     ("public-host", Kind::Text),
@@ -401,6 +404,7 @@ impl Options {
             "max-sessions-per-key" => limits.max_sessions_per_key = count()?,
             "max-sessions-per-route" => limits.max_sessions_per_route = count()?,
             "max-transfer-per-hour" => limits.max_transfer_per_hour = bytes()?,
+            "max-web-sessions-per-route" => limits.max_web_sessions_per_route = count()?,
             "metrics" if text == "off" => self.metrics = None,
             "metrics" => self.metrics = Some(text.parse().map_err(|_| invalid())?),
             "metrics-token-file" => self.metrics_token = Some(read(name, text)?),

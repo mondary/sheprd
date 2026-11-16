@@ -12,10 +12,12 @@
 //! 1. Relay: `{"t":"challenge","nonce","version"}`.
 //! 2. Listener: `{"key","signature","token"?}` over [`listen_signed`].
 //! 3. Relay: `{"t":"ready","route"}`, or a close code.
-//! 4. Listener, any time: `{"t":"dial_keys","keys":[…]}` or
-//!    `{"t":"pairing_key","key","seconds"}`; relay: `{"t":"status","status"}`.
-//! 5. Relay, per dial: `{"t":"incoming","session","key"}`; the listener
-//!    opens `GET /v1/accept/{session}`.
+//! 4. Listener, any time: `{"t":"dial_keys","keys":[…]}`,
+//!    `{"t":"pairing_key","key","seconds"}`, or `{"t":"web","enabled"}`;
+//!    relay: `{"t":"status","status"}`.
+//! 5. Relay, per dial: `{"t":"incoming","session","key"}`, or, per browser
+//!    connection to its web name, `{"t":"incoming_web","session"}`; the
+//!    listener opens `GET /v1/accept/{session}`.
 //!
 //! Dialer, on `GET /v1/dial/{route}`:
 //!
@@ -48,6 +50,9 @@ pub enum ToPeer {
     Challenge { nonce: String, version: u8 },
     /// A dialer waits: open `/v1/accept/{session}`. `key` is the dialer's.
     Incoming { key: String, session: String },
+    /// A browser reached the listener's web name: open
+    /// `/v1/accept/{session}`, whose binary frames carry its TLS.
+    IncomingWeb { session: String },
     /// Listening on `route`.
     Ready { route: String },
     /// The answer to a dial or a listener's message.
@@ -88,6 +93,8 @@ pub enum FromListener {
     DialKeys { keys: Vec<String> },
     /// A key allowed one dial within `seconds`, for pairing.
     PairingKey { key: String, seconds: u16 },
+    /// Whether browsers may reach the listener at its web name.
+    Web { enabled: bool },
 }
 
 impl FromListener {
@@ -112,6 +119,7 @@ impl FromListener {
                     seconds: *seconds,
                 })
             }
+            Self::Web { enabled } => Some(Message::Web(*enabled)),
         }
     }
 }

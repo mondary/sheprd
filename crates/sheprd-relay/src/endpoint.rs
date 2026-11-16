@@ -297,6 +297,10 @@ pub struct Info {
     pub quic: Option<QuicInfo>,
     /// The relay's build.
     pub version: String,
+    /// Whether browsers can reach computers' web names through the
+    /// relay's TCP front (`docs/relay-web-plan.md`).
+    #[serde(default)]
+    pub web: bool,
     /// Whether the WebSocket fallback answers: only on a relay that knows
     /// its own public name.
     #[serde(default)]

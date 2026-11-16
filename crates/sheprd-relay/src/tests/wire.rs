@@ -118,7 +118,7 @@ fn unknown_kinds_are_refused() {
     for kind in [0x00, 0x03, 0x10, 0xff] {
         assert_eq!(Request::parse(&[kind]), Err(Malformed::Kind(kind)));
     }
-    for kind in [0x01, 0x02, 0x22] {
+    for kind in [0x01, 0x02, 0x23] {
         assert_eq!(Message::parse(&[kind]), Err(Malformed::Kind(kind)));
     }
 }

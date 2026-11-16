@@ -7,13 +7,19 @@ use super::{
     proxy,
 };
 use crate::{
+    WebLabel, broker,
     hub::Hub,
     metrics::{Front, Offense, Refused},
     serve::capped::{Capped, Held},
+    splice::{Peer, splice},
     wire::Parse,
 };
-use axum::serve::Listener as _;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use axum::{body::Bytes, serve::Listener as _};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional},
     net::TcpStream,
@@ -75,12 +81,28 @@ async fn connection(mut held: Held, peer: SocketAddr, hub: Arc<Hub>, config: Con
         Destination::Relay => {
             forward(held, &buffered, peer, &hub, config.upstream.as_deref()).await
         }
-        // Web sessions and certificate challenges are not served yet, so
-        // their names answer as any other unknown name does.
-        Destination::Web(_) | Destination::Challenge(_) | Destination::Refuse => {
-            hub.metrics.front(Front::Refused);
-        }
+        Destination::Web(label) => web(held, buffered, address, &hub, label).await,
+        // Certificate challenges are not answered yet, so they are closed
+        // as any name the relay does not serve.
+        Destination::Challenge(_) | Destination::Refuse => hub.metrics.front(Front::Refused),
     }
+}
+
+/// Carries a browser's connection to the computer at `label`, starting
+/// with the bytes already read, if it turned web access on. Any refusal
+/// closes the connection the same way, so a browser cannot tell an
+/// unknown name from one whose computer is offline or busy.
+async fn web(held: Held, buffered: Vec<u8>, address: IpAddr, hub: &Arc<Hub>, label: WebLabel) {
+    let Ok((accepted, session)) = broker::dial_web(hub, address, label).await else {
+        return hub.metrics.front(Front::Refused);
+    };
+    hub.metrics.front(Front::Web);
+    let _held = (accepted.permit, accepted.window);
+    let browser = Peer::Tcp {
+        prefix: Bytes::from(buffered),
+        stream: Box::new(held),
+    };
+    splice(browser, accepted.peer, session).await;
 }
 
 /// Reads until a whole ClientHello is in, returning it and every byte

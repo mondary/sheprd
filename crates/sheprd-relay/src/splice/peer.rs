@@ -1,7 +1,9 @@
 //! One side of a session, over either transport: a QUIC stream, or a
-//! WebSocket for networks without UDP. A session may mix them.
+//! WebSocket for networks without UDP. A session may mix them. A browser
+//! reaching a computer's web name is a third kind: its TCP connection
+//! through the front.
 
-use crate::{metrics::End, wire};
+use crate::{metrics::End, serve::capped::Held, wire};
 use axum::{
     body::Bytes,
     extract::ws::{CloseFrame, Message, WebSocket},
@@ -11,6 +13,10 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
 };
 use quinn::{RecvStream, SendStream, VarInt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
+
+/// The most bytes read from a browser's connection at once.
+const TCP_READ: usize = 16 * 1024;
 
 /// A dialer or listener, ready to be spliced.
 #[derive(Debug)]
@@ -21,6 +27,12 @@ pub enum Peer {
     Stream {
         recv: RecvStream,
         send: SendStream,
+    },
+    /// A browser's connection through the TCP front, and the bytes the
+    /// front read to route it, which go first.
+    Tcp {
+        prefix: Bytes,
+        stream: Box<Held>,
     },
 }
 
@@ -33,6 +45,11 @@ impl Peer {
                 (Source::Socket(source), Sink::Socket(sink))
             }
             Self::Stream { recv, send } => (Source::Stream(recv), Sink::Stream(send)),
+            Self::Tcp { prefix, stream } => {
+                let (read, write) = tokio::io::split(*stream);
+                let prefix = (!prefix.is_empty()).then_some(prefix);
+                (Source::Tcp { prefix, read }, Sink::Tcp(write))
+            }
         }
     }
 }
@@ -49,6 +66,10 @@ pub(crate) enum Next {
 pub(crate) enum Source {
     Socket(SplitStream<WebSocket>),
     Stream(RecvStream),
+    Tcp {
+        prefix: Option<Bytes>,
+        read: ReadHalf<Held>,
+    },
 }
 
 impl Source {
@@ -68,6 +89,16 @@ impl Source {
                 Ok(Some(chunk)) => Next::Data(chunk.bytes),
                 Ok(None) | Err(_) => Next::End,
             },
+            Self::Tcp { prefix, read } => {
+                if let Some(prefix) = prefix.take() {
+                    return Next::Data(prefix);
+                }
+                let mut buffer = Vec::with_capacity(max.min(TCP_READ));
+                match read.read_buf(&mut buffer).await {
+                    Ok(0) | Err(_) => Next::End,
+                    Ok(_) => Next::Data(Bytes::from(buffer)),
+                }
+            }
         }
     }
 }
@@ -75,6 +106,7 @@ impl Source {
 pub(crate) enum Sink {
     Socket(SplitSink<WebSocket, Message>),
     Stream(SendStream),
+    Tcp(WriteHalf<Held>),
 }
 
 impl Sink {
@@ -83,6 +115,7 @@ impl Sink {
         match self {
             Self::Socket(socket) => socket.send(Message::Binary(bytes)).await.is_ok(),
             Self::Stream(send) => send.write_chunk(bytes).await.is_ok(),
+            Self::Tcp(write) => write.write_all(&bytes).await.is_ok(),
         }
     }
 
@@ -102,6 +135,11 @@ impl Sink {
                     End::Closed => send.finish(),
                     _ => send.reset(VarInt::from_u32(stream_code(end))),
                 };
+            }
+            // TCP says nothing of why; the browser's TLS already ended or
+            // will see the connection close.
+            Self::Tcp(write) => {
+                let _ = write.shutdown().await;
             }
         }
     }

@@ -14,12 +14,12 @@ pub use window::{Widened, Window};
 use crate::{
     broker,
     bucket::Outcome,
-    hub::{Accepted, Hub, Registration},
+    hub::{Accepted, Caller, Hub, Registration},
     metrics::{Kind, Listen, Offense, Refused},
     splice::{Peer, splice},
     wire::{
-        self, EXPORTER_LABEL, EXPORTER_LEN, INCOMING, MAX_MESSAGE, MAX_REQUEST, Message, Parse,
-        Request, Status,
+        self, EXPORTER_LABEL, EXPORTER_LEN, INCOMING, INCOMING_WEB, MAX_MESSAGE, MAX_REQUEST,
+        Message, Parse, Request, Status,
     },
 };
 use quinn::{Connection, Endpoint, RecvStream, SendStream, ServerConfig, TransportConfig, VarInt};
@@ -330,7 +330,10 @@ async fn listen(
                     // stream credit cannot pile up waiting tasks.
                     let open = async {
                         let (mut send, recv) = connection.open_bi().await.ok()?;
-                        let header = [&[INCOMING][..], &incoming.key].concat();
+                        let header = match incoming.caller {
+                            Caller::Device { key, .. } => [&[INCOMING][..], &key].concat(),
+                            Caller::Web => vec![INCOMING_WEB],
+                        };
                         send.write_all(&header).await.ok()?;
                         Some((send, recv))
                     };

@@ -16,7 +16,7 @@
 use crate::{
     RouteId, SessionId, broker,
     endpoint::{Info, PROTOCOL},
-    hub::{Accepted, Hub},
+    hub::{Accepted, Caller, Hub},
     metrics::{Dial, Kind, Listen, Offense, Refused},
     socket::{self, FromListener, Hello, NONCE_LEN, ToPeer},
     splice::{Peer, code, splice},
@@ -76,6 +76,8 @@ pub struct Shared {
     /// What `/v1/info` says about QUIC, when it runs.
     pub quic: Option<crate::endpoint::QuicInfo>,
     pub source: Source,
+    /// Whether the TCP front carries browsers to computers' web names.
+    pub web: bool,
 }
 
 impl Shared {
@@ -164,6 +166,7 @@ async fn info(State(shared): State<Shared>) -> Json<Info> {
             env!("CARGO_PKG_VERSION_MINOR")
         )
         .to_owned(),
+        web: shared.web,
         websocket: shared.public_host.is_some(),
     })
 }
@@ -287,9 +290,13 @@ async fn serve_listener(mut socket: WebSocket, hub: Arc<Hub>, address: IpAddr, h
                     hub.metrics.listen(Listen::Replaced);
                     return close_within(socket, code::REPLACED, silence).await;
                 };
-                let message = ToPeer::Incoming {
-                    key: URL_SAFE_NO_PAD.encode(incoming.key),
-                    session: incoming.session.to_string(),
+                let session = incoming.session.to_string();
+                let message = match incoming.caller {
+                    Caller::Device { key, .. } => ToPeer::Incoming {
+                        key: URL_SAFE_NO_PAD.encode(key),
+                        session,
+                    },
+                    Caller::Web => ToPeer::IncomingWeb { session },
                 };
                 if !send_within(&mut socket, &message, silence).await {
                     return;

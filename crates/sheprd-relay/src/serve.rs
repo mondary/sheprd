@@ -52,6 +52,7 @@ pub fn app(options: &Options, quic: Option<QuicInfo>) -> Result<(Router, Arc<Hub
         public_host: options.public_host.as_deref().map(Arc::from),
         quic,
         source: source(options),
+        web: options.front.is_some(),
     };
     let mut router = web::router(shared.clone());
     if let Some(token) = &options.dashboard_token {

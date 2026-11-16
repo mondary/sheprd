@@ -4,9 +4,9 @@
 //! Each step counts its outcome and answers with a wire [`Status`].
 
 use crate::{
-    RouteId,
+    RouteId, WebLabel,
     bucket::Outcome,
-    hub::{Accepted, DialRefusal, Hub, ListenRefusal, Registration, Session},
+    hub::{Accepted, DialRefusal, Hub, ListenRefusal, Registration, Session, Waiting},
     metrics::{Dial, Listen, Offense},
     route::prove,
     wire::{Key, Message, Status},
@@ -91,6 +91,13 @@ pub fn apply(hub: &Arc<Hub>, registration: &Registration, message: Message) -> S
                 Status::TooMany
             }
         }
+        Message::Web(on) => {
+            if registration.set_web(on) {
+                Status::Ok
+            } else {
+                Status::Refused
+            }
+        }
     }
 }
 
@@ -121,7 +128,39 @@ pub async fn dial(
         let offense = Some(Offense::BadProof);
         return Err(refuse(Status::Offline, Dial::Unauthorized, offense));
     }
-    let waiting = match hub.dial(route, *key, address) {
+    settle(hub, hub.dial(route, *key, address)).await
+}
+
+/// Takes a browser's connection to `label` to an open session, as
+/// [`dial`] does for a device, with no proof: the computer authenticates
+/// browsers itself, and only listeners that turned web access on are
+/// reached.
+pub async fn dial_web(
+    hub: &Arc<Hub>,
+    address: IpAddr,
+    label: WebLabel,
+) -> Result<(Accepted, Session), Status> {
+    if let Some(offense) = limited(hub.allow_dial(address)) {
+        hub.metrics.dial(Dial::Limited);
+        if let Some(offense) = offense {
+            hub.offend(address, offense);
+        }
+        return Err(Status::Limited);
+    }
+    settle(hub, hub.dial_web(label, address)).await
+}
+
+/// A dial's wait for its listener, from the hub's answer to an open
+/// session or the status to give.
+async fn settle(
+    hub: &Arc<Hub>,
+    dialed: crate::Result<Result<Waiting, DialRefusal>>,
+) -> Result<(Accepted, Session), Status> {
+    let refuse = |status, outcome| {
+        hub.metrics.dial(outcome);
+        status
+    };
+    let waiting = match dialed {
         Ok(Ok(waiting)) => waiting,
         // Neither an empty route nor a key the listener did not name costs
         // a point: they must cost the same, as they answer the same, so a
@@ -129,23 +168,23 @@ pub async fn dial(
         // phone retrying while its computer is off must not get its
         // household banned. The dial rate limit catches a flood of either.
         Ok(Err(DialRefusal::Offline)) => {
-            return Err(refuse(Status::Offline, Dial::Offline, None));
+            return Err(refuse(Status::Offline, Dial::Offline));
         }
         Ok(Err(DialRefusal::Unauthorized)) => {
-            return Err(refuse(Status::Offline, Dial::Unauthorized, None));
+            return Err(refuse(Status::Offline, Dial::Unauthorized));
         }
         Ok(Err(DialRefusal::Busy)) | Err(_) => {
-            return Err(refuse(Status::Busy, Dial::Busy, None));
+            return Err(refuse(Status::Busy, Dial::Busy));
         }
     };
     let accepted = match timeout(hub.limits.accept_timeout, waiting.accepted).await {
         Ok(Ok(accepted)) => accepted,
-        Ok(Err(_)) | Err(_) => return Err(refuse(Status::Timeout, Dial::Timeout, None)),
+        Ok(Err(_)) | Err(_) => return Err(refuse(Status::Timeout, Dial::Timeout)),
     };
     drop(waiting.pending);
     let Some(session) = hub.open(waiting.slot) else {
         // Revoked while it waited: the device may not know yet.
-        return Err(refuse(Status::Offline, Dial::Unauthorized, None));
+        return Err(refuse(Status::Offline, Dial::Unauthorized));
     };
     hub.metrics.dial(Dial::Spliced);
     Ok((accepted, session))

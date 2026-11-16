@@ -83,6 +83,7 @@ fn shared(source: Source) -> Shared {
         public_host: None,
         quic: None,
         source,
+        web: false,
     }
 }
 

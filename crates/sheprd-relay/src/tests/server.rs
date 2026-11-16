@@ -10,6 +10,7 @@ mod cross_site;
 mod dashboard;
 mod front;
 mod front_hello;
+mod front_web;
 mod guard;
 mod history;
 mod identity;

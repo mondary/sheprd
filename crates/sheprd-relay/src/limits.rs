@@ -56,6 +56,9 @@ pub struct Limits {
     pub max_sessions_per_key: usize,
     /// Sessions open at once to one listener.
     pub max_sessions_per_route: usize,
+    /// Browser connections open at once to one listener's web name, out
+    /// of its `max_sessions_per_route`.
+    pub max_web_sessions_per_route: usize,
     /// Bytes per second each way within one session.
     pub session_bandwidth: u64,
     /// Bytes per second each way across every session.
@@ -84,6 +87,7 @@ impl Default for Limits {
             max_sessions_per_ip: 64,
             max_sessions_per_key: 4,
             max_sessions_per_route: 32,
+            max_web_sessions_per_route: 16,
             session_bandwidth: 4 * 1024 * 1024,
             total_bandwidth: 64 * 1024 * 1024,
         }

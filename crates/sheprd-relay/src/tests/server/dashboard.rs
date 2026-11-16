@@ -256,6 +256,7 @@ fn a_client_ip_header_names_the_caller() {
         public_host: None,
         quic: None,
         source,
+        web: false,
     };
     let peer = SocketAddr::from(([10, 0, 0, 1], 1));
     let mut headers = axum::http::HeaderMap::new();

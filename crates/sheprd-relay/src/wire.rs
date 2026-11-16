@@ -21,6 +21,7 @@
 //! | --- | --- |
 //! | Dial keys | `0x20`, count (1, at most [`MAX_DIAL_KEYS`]), keys (33 each) |
 //! | Pairing key | `0x21`, key (33), lifetime in seconds (2, big-endian, at most [`MAX_PAIRING_SECS`]) |
+//! | Web access | `0x22`, on (1: `1`) or off (`0`) |
 //!
 //! Dial keys replace the whole set; sessions of a key no longer in it end
 //! at once. A pairing key works for one dial before it expires. The relay
@@ -36,6 +37,14 @@
 //! starts with [`INCOMING`] and the dialer's key (33), so the computer
 //! knows which device it is before the end-to-end handshake; after that,
 //! it is the session.
+//!
+//! **Web access** (`docs/relay-web-plan.md`). A listener that turns it on
+//! is reachable by browsers at its web name through the relay's TCP
+//! front. Each browser connection arrives as a stream starting with
+//! [`INCOMING_WEB`] alone, then the browser's TLS bytes, starting with its
+//! ClientHello: the computer ends TLS itself and authenticates the
+//! browser, since no dial key is involved. Turning it off ends those
+//! sessions.
 //!
 //! Proofs sign a context and 32 bytes exported from the signer's own TLS
 //! session (RFC 5705, label [`EXPORTER_LABEL`]). The export differs on
@@ -56,6 +65,9 @@ pub const LISTEN_CONTEXT: &[u8] = b"sheprd-relay/listen/quic/v1\0";
 pub const DIAL_CONTEXT: &[u8] = b"sheprd-relay/dial/quic/v1\0";
 /// The first byte of a stream the relay opens to a listener.
 pub const INCOMING: u8 = 0x10;
+/// The first byte of a stream the relay opens to a listener for a
+/// browser's connection to its web name.
+pub const INCOMING_WEB: u8 = 0x11;
 /// The most dial keys one listener may name: its paired devices.
 pub const MAX_DIAL_KEYS: usize = 64;
 /// The longest a pairing key may live.
@@ -70,6 +82,7 @@ const LISTEN: u8 = 0x01;
 const DIAL: u8 = 0x02;
 const DIAL_KEYS: u8 = 0x20;
 const PAIRING_KEY: u8 = 0x21;
+const WEB: u8 = 0x22;
 pub const KEY_LEN: usize = 33;
 pub const SIGNATURE_LEN: usize = 64;
 const DIAL_LEN: usize = 1 + 32 + KEY_LEN + SIGNATURE_LEN;
@@ -102,6 +115,8 @@ pub enum Message {
     DialKeys(Vec<Key>),
     /// A key allowed one dial within `seconds`, for pairing a new device.
     PairingKey { key: Key, seconds: u16 },
+    /// Whether browsers may reach the listener at its web name.
+    Web(bool),
 }
 
 /// Why bytes are not a request or message.
@@ -113,6 +128,8 @@ pub enum Malformed {
     Keys,
     /// A pairing key's lifetime is zero or over [`MAX_PAIRING_SECS`].
     Lifetime,
+    /// A web access switch that is neither on nor off.
+    Switch,
     /// A token longer than 255 bytes cannot be encoded.
     Token,
 }
@@ -234,6 +251,7 @@ impl Message {
                 bytes.extend_from_slice(&seconds.to_be_bytes());
                 Ok(bytes)
             }
+            Self::Web(on) => Ok(vec![WEB, u8::from(*on)]),
         }
     }
 
@@ -276,6 +294,12 @@ impl Message {
                     total,
                 ))
             }
+            WEB => match bytes.get(1) {
+                None => Ok(Parse::Need(2)),
+                Some(0) => Ok(Parse::Done(Self::Web(false), 2)),
+                Some(1) => Ok(Parse::Done(Self::Web(true), 2)),
+                Some(_) => Err(Malformed::Switch),
+            },
             other => Err(Malformed::Kind(other)),
         }
     }
