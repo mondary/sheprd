@@ -353,18 +353,22 @@ run `sheprd config set tab_labels.agent_title true`.
 
 | Command | What it does |
 | --- | --- |
-| `remote [status]` | Whether remote control is on and its daemon runs: its port, version, the addresses it serves with network labels and daemon-host interface names, its certificate authority fingerprint, paired and connected devices, and each relay it listens on with its name, description, and tags, whether it is listening, and its round trip (`[remote] relays`, and relays Sheprd on another computer shared with it). JSON includes optional `status.address_details` keyed by origin, and `status.relays` keyed by relay with a `state` of `connecting`, `listening` (with its round trip `rtt_ms` once measured), or `failed` (with its `error`), and the `name`, `description`, and `tags` its `[remote] relays` entry gives it, if any; older daemons omit them |
+| `remote [status]` | Whether remote control is on and its daemon runs: its port, version, the addresses it serves with network labels and daemon-host interface names, its certificate authority fingerprint, paired and connected devices, and each relay it listens on with its name, description, and tags, whether it is listening, and its round trip (`[remote] relays`, and relays Sheprd on another computer shared with it). JSON includes optional `status.address_details` keyed by origin, and `status.relays` keyed by relay with a `state` of `connecting`, `listening` (with its round trip `rtt_ms` once measured), or `failed` (with its `error`), and the `name`, `description`, and `tags` its `[remote] relays` entry gives it, if any; older daemons omit them; a relay serving web access adds its `web` report (as `remote web status` gives it) and a `Web:` line |
 | `remote devices` | The paired devices with their IDs, when each was last seen, whether it gets notifications, and the other machines it was paired with from here or is being paired with. JSON includes each device's optional `via` (the computer that vouched for it) and `hosts`, each with a `state` of `offered`, `allowed`, `asking`, `pending`, `paired`, or `failed`. Exits 4 when there are none |
 | `remote pair [--address HTTPS_ORIGIN]` | Open the pairing dialog, preferring Tailscale by default. Choose an address in the dialog, or pass an exact origin from `remote status` (for example `https://100.101.102.103:7443`). The QR and its token show only there, and the user approves the phone there. An unavailable address is reported in the dialog |
 | `remote restart` | Restart the daemon from the binary beside the app, as after a rebuild or update; phones reconnect on their own. Exits 6 while the service is already changing |
 | `remote revoke DEVICE` | Ask in the window to revoke a paired device, named by its ID from `remote devices` or its name (a name two devices share is refused); the user confirms there |
+| `remote web [status]` | Web access through each private relay ([relay web plan](relay-web-plan.md)): every `[remote] relays` entry with a listen token file or web access on, whether it is on, the address browsers open, the certificate's expiry (UTC) or last error, and the Certificate Transparency watch's last check. An alert (a logged certificate for the web address with another key) leads its relay's lines: web access stays off there until it is turned on again. JSON gives `{"relays": [{"endpoint", "name", "enabled", "token_file", "status"}], "alert", "error"}`, where `status` is the daemon's report (`url`, `expires_ms`, `error`, and `transparency` with a `state` of `unchecked`, `clean`, `failed`, or `alert`), absent while the daemon does not serve web access there. Exits 4 when no relay has a listen token file |
+| `remote web enable [--relay NAME]` | Ask in the window to turn web access on through a private relay, named by its address or its name; without `--relay`, the only relay with a listen token file. The question says the computer's sign-in page becomes reachable from the internet at its web address, where devices pair with a passkey, and, after an alert, that turning it on again trusts the relay's operator; the user confirms there. A relay without a token file is refused (exit 1). When it is on already, with no alert, it says so |
+| `remote web disable [--relay NAME]` | Turn web access off through a relay at once, named as for `enable` |
 
 Remote control is turned on in Settings > Remote control, or with
 `config set remote.enabled true`; the app then installs the `sheprd-remote-control`
 daemon as a user service and keeps it in line with the `[remote]` settings.
 While it is off, `remote status` says so and exits 0; `pair`, `devices`,
-`revoke`, and `restart` exit 1. A dialog already open in the window refuses `pair` and
-`revoke` (exit 6). `--json` gives `{"enabled", "running", "status", "error"}`
+`revoke`, `restart`, and `web enable` exit 1, while `web status` and `web disable`
+read and change `[remote] relays` alone. A dialog already open in the window refuses `pair`,
+`revoke`, and `web enable` (exit 6). `--json` gives `{"enabled", "running", "status", "error"}`
 for `status`, where `status` is the daemon's own report, and
 `{"devices": [...]}` for `devices`.
 
@@ -379,6 +383,8 @@ pairing never copies the desktop's credential. See the
 ```sh
 sheprd remote status --json
 sheprd remote revoke d_6f1c
+sheprd remote web status --json
+sheprd remote web enable --relay home
 ```
 
 ### Mods

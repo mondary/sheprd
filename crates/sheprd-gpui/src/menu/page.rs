@@ -103,6 +103,8 @@ pub(crate) enum Page {
     RemoteHostAsk,
     /// Confirming Sheprd on another machine should update itself.
     RemoteUpdate,
+    /// Confirming web access should be turned on through a private relay.
+    RemoteWeb,
     RemoveDevice,
     /// Confirming a saved WSL distribution should be forgotten.
     RemoveWsl,

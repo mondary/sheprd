@@ -48,6 +48,8 @@ pub(in crate::settings_window) struct RemoteSettings {
     relay: Option<Entity<SearchInput>>,
     /// What was typed is not a relay's address, so it was not added.
     relay_invalid: bool,
+    /// Each relay's token file and web access.
+    pub(in crate::settings_window) web: relays::web::WebSettings,
     /// Sheprd's own relays, read once the page shows.
     pub(in crate::settings_window) offered: Offered,
 }
@@ -158,6 +160,7 @@ impl SettingsWindow {
         if self.remote.relay.is_none() {
             self.remote.relay = Some(field(String::new(), relays::PLACEHOLDER, cx));
         }
+        self.open_relay_web(cx);
         self.sync_remote_fields(cx);
         // A list kept from an earlier visit may have expired since; it is
         // then read again like one that failed.
@@ -174,13 +177,12 @@ impl SettingsWindow {
         self.remote.lease = None;
         self.remote.revoking = None;
         self.remote.relay_invalid = false;
+        self.close_relay_web();
     }
 
     pub(in crate::settings_window) fn sync_remote_fields(&mut self, cx: &mut Context<Self>) {
-        for input in [&self.remote.cert, &self.remote.key, &self.remote.relay]
-            .into_iter()
-            .flatten()
-        {
+        let fields = [&self.remote.cert, &self.remote.key, &self.remote.relay];
+        for input in fields.into_iter().flatten().chain(self.relay_web_input()) {
             input.update(cx, |input, cx| {
                 input.set_appearance(self.config.terminal.clone(), self.theme.clone(), cx);
             });

@@ -4,6 +4,7 @@ use crate::protocol::{Call, Caller, Request, Response};
 use sheprd_remote_control::control::DeviceId;
 
 mod addresses;
+mod web;
 
 #[test]
 fn remote_requests_have_a_stable_wire_form() {

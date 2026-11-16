@@ -52,6 +52,7 @@ menu-page-remote-control = Remote control
 menu-page-remote-control-phones = Remote control phones
 menu-page-pair-another-machine = Pair another machine
 menu-page-update-remote-sheprd = Update Sheprd
+menu-page-web-access = Web access
 menu-page-remove-device = Remove device
 menu-page-remove-wsl-distribution = Remove WSL distribution
 menu-page-rename-device = Rename device

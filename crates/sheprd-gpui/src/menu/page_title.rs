@@ -91,6 +91,7 @@ impl Page {
             Self::RemoteDevices => fl!("menu-page-remote-control-phones"),
             Self::RemoteHostAsk => fl!("menu-page-pair-another-machine"),
             Self::RemoteUpdate => fl!("menu-page-update-remote-sheprd"),
+            Self::RemoteWeb => fl!("menu-page-web-access"),
             Self::RemoveDevice => fl!("menu-page-remove-device"),
             Self::RemoveWsl => fl!("menu-page-remove-wsl-distribution"),
             Self::RenameCore => fl!("menu-page-rename-tab"),

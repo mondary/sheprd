@@ -310,6 +310,7 @@ what Sheprd shows or keeps.
 | Run a command on a saved cloud machine (clone, build, commit, push) | `sheprd cloud exec ID --cwd ~/code/app -- git status` |
 | Delete saved cloud machines you are done with, then follow it | `sheprd cloud destroy ID... --json`, `sheprd cloud wait BATCH --timeout 600 --json` |
 | Check remote control and its daemon-host network interfaces, or pair a phone (Tailscale preferred; optionally choose an origin from status) | `sheprd remote status`, `sheprd remote pair [--address HTTPS_ORIGIN]` |
+| Check or change web access to this computer through a private relay (enable asks the user in Sheprd) | `sheprd remote web status`, `sheprd remote web enable [--relay NAME]`, `sheprd remote web disable [--relay NAME]` |
 | Keep the machine awake during a long job | `sheprd caffeine on --for 2h` |
 | Check whether the app runs, and which windows and hosts it has | `sheprd status` |
 

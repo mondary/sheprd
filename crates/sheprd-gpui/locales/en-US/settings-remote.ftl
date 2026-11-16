@@ -70,6 +70,34 @@ settings-remote-public-relay-named = { $name } ({ $region })
 settings-remote-public-relay-added = Added
 settings-remote-public-relay-add-label = Add { $relay }
 settings-remote-relay-invalid = That is not a relay's address. Give one such as { $example }.
+# Web access through a private relay, under each relay. $example is an
+# example path; $url is the web address; $ago says how long ago.
+settings-remote-web-token = Listen token file
+settings-remote-web-token-none = None. Web access needs a private relay and the file holding its listen token.
+settings-remote-web-token-note = An absolute path, such as { $example }. Press Enter to save; leave it empty to remove it.
+settings-remote-web-token-invalid = That is not an absolute path. Give one such as { $example }.
+settings-remote-web-token-set = Set…
+settings-remote-web-token-change = Change…
+settings-remote-web-token-save = Save
+settings-remote-web-token-cancel = Cancel
+settings-remote-web = Web access
+settings-remote-web-needs-token = Needs the relay's listen token file.
+settings-remote-web-off = Lets browsers open this computer's sign-in page through this relay. Turning it on asks first.
+settings-remote-web-on = On. Browsers reach this computer's sign-in page at its web address.
+settings-remote-web-starting = On. Waiting for the daemon to report the web address.
+settings-remote-web-url = Web address: { $url }
+settings-remote-web-expires = { $days ->
+        [one] Certificate expires in { $days } day.
+       *[other] Certificate expires in { $days } days.
+    }
+settings-remote-web-expired = The certificate expired.
+settings-remote-web-certificate-failed = No certificate yet: { $error }
+settings-remote-web-certificate-pending = No certificate yet.
+settings-remote-web-ct-unchecked = Certificate Transparency: not checked yet.
+settings-remote-web-ct-clean = Certificate Transparency: no certificate with another key, checked { $ago }.
+settings-remote-web-ct-failed = Certificate Transparency check failed { $ago }: { $error }
+settings-remote-web-alert = A Certificate Transparency log showed a certificate for this web address with another key ({ $ago }). Web access is off through this relay until you turn it on again.
+settings-remote-web-resume = Turn On Again…
 
 settings-remote-section-notifications = Notifications
 settings-remote-notifications-note = Generic says which chat needs you without its text; Excerpt adds a short excerpt of the message.

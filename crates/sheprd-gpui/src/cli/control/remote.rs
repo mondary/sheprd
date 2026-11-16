@@ -1,4 +1,5 @@
-//! `remote`: remote control from a phone.
+//! `remote`: remote control from a phone, and web access through a
+//! private relay.
 use super::{Args, CliError, unknown};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,6 +17,16 @@ pub enum RemoteCommand {
     },
     /// Restart the daemon from the binary beside the app.
     Restart,
+    /// Web access on each relay that offers it.
+    WebStatus,
+    /// Open the confirmation for turning web access on through a relay.
+    WebEnable {
+        relay: Option<String>,
+    },
+    /// Turn web access off through a relay.
+    WebDisable {
+        relay: Option<String>,
+    },
 }
 
 pub(super) fn remote(args: &mut Args) -> Result<RemoteCommand, CliError> {
@@ -36,6 +47,24 @@ pub(super) fn remote(args: &mut Args) -> Result<RemoteCommand, CliError> {
                 what: "DEVICE",
             })?,
         },
+        Some("web") => web(args)?,
         _ => return Err(unknown("remote", verb)),
+    })
+}
+
+/// `remote web [status]`, `remote web enable|disable [--relay NAME]`.
+fn web(args: &mut Args) -> Result<RemoteCommand, CliError> {
+    let Some(verb) = args.verb() else {
+        return Ok(RemoteCommand::WebStatus);
+    };
+    Ok(match verb.to_str() {
+        Some("status") => RemoteCommand::WebStatus,
+        Some("enable") => RemoteCommand::WebEnable {
+            relay: args.text_option("--relay")?,
+        },
+        Some("disable") => RemoteCommand::WebDisable {
+            relay: args.text_option("--relay")?,
+        },
+        _ => return Err(unknown("remote web", verb)),
     })
 }

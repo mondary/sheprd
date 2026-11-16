@@ -1,5 +1,5 @@
-//! `remote status`, `remote devices`, `remote pair`, `remote revoke`, and
-//! `remote restart`.
+//! `remote status`, `remote devices`, `remote pair`, `remote revoke`,
+//! `remote restart`, and `remote web` ([`web`]).
 //! The daemon is asked on the background executor. Pairing and revoking
 //! open the window's own dialogs, where the user approves a device or
 //! confirms the revoke; neither happens from here.
@@ -15,6 +15,8 @@ use gpui::App;
 use sheprd_remote_control::control::{Device, Request};
 use std::time::Duration;
 
+mod web;
+
 const OFF: &str = "Remote control is off; turn it on in Settings > Remote control";
 
 pub(super) fn serve(
@@ -25,6 +27,12 @@ pub(super) fn serve(
 ) {
     let wait = Duration::from_secs(call.op.wait_seconds());
     let Call { caller, op } = call;
+    if matches!(
+        op,
+        RemoteOp::WebStatus | RemoteOp::WebEnable { .. } | RemoteOp::WebDisable { .. }
+    ) {
+        return web::serve(&caller, op, wait, incoming, watches, cx);
+    }
     let enabled = match window_for(&caller, cx) {
         Ok(handle) => handle
             .read_with(cx, |view, _| view.config.remote.enabled)
@@ -124,7 +132,11 @@ pub(super) fn serve(
                 })
             })
         }
-        RemoteOp::Pair { .. } | RemoteOp::Restart => return,
+        RemoteOp::Pair { .. }
+        | RemoteOp::Restart
+        | RemoteOp::WebStatus
+        | RemoteOp::WebEnable { .. }
+        | RemoteOp::WebDisable { .. } => return,
     };
     answer_when_done(task, wait, incoming, watches, cx);
 }

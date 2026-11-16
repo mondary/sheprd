@@ -19,8 +19,9 @@ pub(crate) mod nearby;
 pub(crate) mod public_relays;
 mod revoke;
 pub(crate) mod supervisor;
+pub(crate) mod web;
 
-pub(crate) use dialog::{PairingDialog, addresses};
+pub(crate) use dialog::{PairingDialog, addresses, qr_square};
 pub(crate) use revoke::Revoke;
 pub use sheprd_remote_control::app::Error;
 pub(crate) use sheprd_remote_control::app::{Result, pairing, qr, service};

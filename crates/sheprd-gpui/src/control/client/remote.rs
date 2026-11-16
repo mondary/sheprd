@@ -1,5 +1,5 @@
-//! `remote`: the remote control daemon's status, devices, and restart, and
-//! the window's pairing and revoke dialogs.
+//! `remote`: the remote control daemon's status, devices, and restart, the
+//! window's pairing and revoke dialogs, and web access ([`web`]).
 use super::{Context, Output, unexpected};
 use crate::{
     cli::control::RemoteCommand,
@@ -10,6 +10,8 @@ use crate::{
 };
 use sheprd_remote_control::control::{Device, Status};
 
+mod web;
+
 pub(super) fn remote(command: RemoteCommand, context: &Context) -> crate::Result<Output> {
     let op = match command {
         RemoteCommand::Status => RemoteOp::Status,
@@ -17,6 +19,9 @@ pub(super) fn remote(command: RemoteCommand, context: &Context) -> crate::Result
         RemoteCommand::Devices => RemoteOp::Devices,
         RemoteCommand::Revoke { device } => RemoteOp::Revoke { device },
         RemoteCommand::Restart => RemoteOp::Restart,
+        RemoteCommand::WebStatus => RemoteOp::WebStatus,
+        RemoteCommand::WebEnable { relay } => RemoteOp::WebEnable { relay },
+        RemoteCommand::WebDisable { relay } => RemoteOp::WebDisable { relay },
     };
     match context.call(Request::Remote, op)? {
         Response::Done { message } => Ok(Output::message(message)),
@@ -53,6 +58,7 @@ pub(super) fn output(reply: &Reply) -> crate::Result<Output> {
             let lines: Vec<String> = devices.iter().map(|device| line(device, now)).collect();
             Output::data(lines.join("\n"), &json)
         }
+        Reply::Web { relays, error } => web::output(relays, error.as_deref()),
     }
 }
 
@@ -128,6 +134,10 @@ fn relay_line(relay: &str, status: &sheprd_remote_control::control::RelayStatus)
     if !label.tags.is_empty() {
         line.push_str("\n  Tags: ");
         line.push_str(&label.tags.join(", "));
+    }
+    if let Some(status) = &status.web {
+        line.push_str("\n  Web: ");
+        line.push_str(&web::summary(status, crate::remote::now_ms()));
     }
     line
 }

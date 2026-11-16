@@ -70,6 +70,7 @@ fn every_page_title_is_a_message_under_en_xa() {
             Page::PrReview,
             Page::RemoteControl,
             Page::RemoteDevices,
+            Page::RemoteWeb,
             Page::RemoveDevice,
             Page::RemoveWsl,
             Page::RenameDevice,

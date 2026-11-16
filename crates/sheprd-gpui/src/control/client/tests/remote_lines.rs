@@ -4,6 +4,7 @@ use sheprd_remote_control::control::{Device, DeviceId, Status};
 
 mod addresses;
 mod relays;
+mod web;
 
 fn status() -> Status {
     Status {

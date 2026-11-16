@@ -19,6 +19,8 @@ use crate::{
 use gpui::{prelude::*, *};
 use sheprd_remote_control::control::RelayState;
 
+pub(super) mod web;
+
 /// An example address, the same in every language.
 pub(super) const PLACEHOLDER: &str = "https://relay.example.org";
 
@@ -294,12 +296,20 @@ impl SettingsWindow {
                     cx.listener(move |this, _, _, cx| this.remove_remote_relay(index, cx)),
                 )
             });
-            ui::row(theme, format!("remote-relay-{index}"), name)
-                .dot(standing.color(theme))
-                .description(relay_line(relay, &standing))
-                .control(remove)
+            div()
+                .flex()
+                .flex_col()
+                .child(
+                    ui::row(theme, format!("remote-relay-{index}"), name)
+                        .dot(standing.color(theme))
+                        .description(relay_line(relay, &standing))
+                        .control(remove),
+                )
+                .child(self.relay_web(index, relay, health, cx))
                 .into_any_element()
         });
+        // Drawn now: each relay's web access needs `cx` as Add does.
+        let rows: Vec<AnyElement> = rows.collect();
         let add = ui::button(
             theme,
             "remote-relay-add-button",

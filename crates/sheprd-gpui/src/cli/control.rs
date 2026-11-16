@@ -224,7 +224,7 @@ pub const FAMILIES: &[(&str, &str)] = &[
     ),
     (
         "remote",
-        "Remote control from a phone: status, pairing, and paired devices",
+        "Remote control from a phone: status, pairing, paired devices, and web access",
     ),
     (
         "mod",

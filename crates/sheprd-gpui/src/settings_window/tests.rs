@@ -27,6 +27,7 @@ mod remote_control;
 mod remote_history_reload;
 mod remote_relay_labels;
 mod remote_relays;
+mod remote_relays_web;
 mod rtl;
 mod save_now;
 mod scrollbars;
