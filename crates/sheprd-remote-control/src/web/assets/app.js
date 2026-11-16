@@ -348,8 +348,12 @@ const CHALLENGE_FRESH_MS = 45_000;
 /// fetched ahead of the tap and replaced before it expires, so the tap
 /// itself starts the prompt, which browsers require, and a retry is never
 /// refused as expired; a cancelled try leaves the prompt for another.
+/// Once another screen replaces the prompt, as coming back to the page
+/// does, it fetches no more: that sign-in is dropped, never finished, so
+/// it cannot draw over the one that replaced it.
 function tapForPasskey(fresh) {
   show("t-passkey");
+  const shown = app.views;
   const button = view().querySelector("[data-passkey]");
   const state = view().querySelector("[data-state]");
   let ready;
@@ -360,7 +364,10 @@ function tapForPasskey(fresh) {
     ready.catch(() => {});
   };
   renew();
-  const timer = setInterval(renew, CHALLENGE_FRESH_MS);
+  const timer = setInterval(() => {
+    if (app.views !== shown) return clearInterval(timer);
+    renew();
+  }, CHALLENGE_FRESH_MS);
   return new Promise((resolve) => {
     button.addEventListener("click", async () => {
       state.textContent = "";
