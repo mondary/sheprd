@@ -209,6 +209,9 @@ async fn a_browser_reaches_the_app_through_a_private_relays_front() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert!(shared.serves(&origin), "the web origin was never served");
+    // A page served there learns that the origin is this computer's, as
+    // pairing and sign-in tell it, so a Home Screen app takes over.
+    assert!(shared.origins().contains(&origin), "{:?}", shared.origins());
 
     // A browser trusting the same CA, at the web name, through the front.
     let client = rustls::ClientConfig::builder_with_provider(Arc::new(

@@ -5,18 +5,28 @@ use super::*;
 use crate::config::remote::Relay;
 use std::path::PathBuf;
 
+/// An absolute token file path on this platform: Windows wants a drive.
+fn token_file() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from(r"C:\sheprd\fra1.token")
+    } else {
+        PathBuf::from("/etc/sheprd/fra1.token")
+    }
+}
+
 #[test]
 fn a_private_relay_names_its_token_file_and_web_access() -> anyhow::Result<()> {
-    let config = Config::parse(
-        "[remote]\nrelays = [{ endpoint = 'https://fra1.sheprd-relay.dev', \
-         token_file = '/etc/sheprd/fra1.token', web = true }]\n",
-    )?;
+    let config = Config::parse(&format!(
+        "[remote]\nrelays = [{{ endpoint = 'https://fra1.sheprd-relay.dev', \
+         token_file = '{}', web = true }}]\n",
+        token_file().display()
+    ))?;
     assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
     assert_eq!(
         config.remote.relays,
         [Relay {
             endpoint: "https://fra1.sheprd-relay.dev".into(),
-            token_file: Some(PathBuf::from("/etc/sheprd/fra1.token")),
+            token_file: Some(token_file()),
             web: true,
             ..Relay::default()
         }]
@@ -31,7 +41,7 @@ fn saving_keeps_the_token_file_and_web_access() -> anyhow::Result<()> {
     let path = directory.path().join("local.toml");
     let private = Relay {
         endpoint: "https://fra1.sheprd-relay.dev".into(),
-        token_file: Some(PathBuf::from("/etc/sheprd/fra1.token")),
+        token_file: Some(token_file()),
         web: true,
         ..Relay::default()
     };

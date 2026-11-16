@@ -136,12 +136,19 @@ impl State {
         self.near.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Every `https://` origin the server answers at now.
+    /// Every `https://` origin the server answers at now: its network
+    /// addresses, then its web names on relays, so a page served at one
+    /// learns that it belongs to this computer.
     pub(crate) fn origins(&self) -> Vec<String> {
-        self.names
+        let mut origins = self
+            .names
             .read()
             .unwrap_or_else(PoisonError::into_inner)
-            .origins(self.port)
+            .origins(self.port);
+        if let Some(relay) = &self.relay {
+            origins.extend(relay.web_origins());
+        }
+        origins
     }
 
     /// Whether `origin` may call the API: one served now or before, or an
@@ -154,14 +161,10 @@ impl State {
             )
     }
 
-    /// Whether `origin` is this computer's own: served now or before, or
-    /// one of its web names on a relay.
+    /// Whether `origin` is this computer's own: served now, including its
+    /// web names on relays, or before.
     pub(crate) fn serves(&self, origin: &str) -> bool {
         allowed_origin(&self.origins(), origin)
-            || self
-                .relay
-                .as_ref()
-                .is_some_and(|relay| relay.serves_web_origin(origin))
             || self
                 .seen
                 .lock()

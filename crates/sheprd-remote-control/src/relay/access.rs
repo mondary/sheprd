@@ -37,22 +37,19 @@ pub(crate) struct Access {
 }
 
 /// Each configured relay's access, by endpoint as the daemon names it,
-/// its token files read. Blocking.
+/// its token files read. A relay named twice keeps what any entry gives,
+/// the last token file and either web switch, as saving the list does.
+/// Blocking.
 pub(crate) fn load(relays: &[Relay]) -> Result<BTreeMap<String, Access>> {
-    relays
-        .iter()
-        .map(|relay| {
-            let token = match &relay.token_file {
-                Some(path) => read(path)?,
-                None => Token::default(),
-            };
-            let access = Access {
-                token,
-                web: relay.web,
-            };
-            Ok((relay.endpoint.to_string(), access))
-        })
-        .collect()
+    let mut access: BTreeMap<String, Access> = BTreeMap::new();
+    for relay in relays {
+        let entry = access.entry(relay.endpoint.to_string()).or_default();
+        if let Some(path) = &relay.token_file {
+            entry.token = read(path)?;
+        }
+        entry.web |= relay.web;
+    }
+    Ok(access)
 }
 
 /// A token file's one token, trimmed: not empty, and short enough to send.
@@ -69,3 +66,7 @@ fn read(path: &Path) -> Result<Token> {
     }
     Ok(Token(token.as_bytes().to_vec()))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests;

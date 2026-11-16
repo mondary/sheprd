@@ -236,13 +236,14 @@ impl Relays {
             .cloned()
     }
 
-    /// Whether `origin` is one of this computer's web names.
-    pub(crate) fn serves_web_origin(&self, origin: &str) -> bool {
+    /// This computer's web origins, one per relay serving browsers.
+    pub(crate) fn web_origins(&self) -> Vec<String> {
         self.web
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .values()
-            .any(|serving| serving.origin.eq_ignore_ascii_case(origin))
+            .map(|serving| serving.origin.clone())
+            .collect()
     }
 
     /// Every relay to listen on: the configured ones, then the shared ones
