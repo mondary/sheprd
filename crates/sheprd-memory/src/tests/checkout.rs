@@ -1,3 +1,5 @@
+// Only the Unix worktree test uses the shared fixtures.
+#[cfg(unix)]
 use super::*;
 use crate::checkout::branch_of;
 
