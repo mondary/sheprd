@@ -55,12 +55,16 @@ pub(crate) fn agent() -> ureq::Agent {
 }
 
 /// Looks `host` up at `api`, comparing each certificate's key with `own`
-/// (SHA-256 of each SubjectPublicKeyInfo this computer holds). Blocking.
+/// (SHA-256 of each SubjectPublicKeyInfo this computer holds). The
+/// certificates in `accepted`, ones the user turned web access on again
+/// after, are passed over by name; another with the same foreign key is
+/// still found. Blocking.
 pub(crate) fn check(
     agent: &ureq::Agent,
     api: &Url,
     host: &str,
     own: &[[u8; 32]],
+    accepted: &[String],
 ) -> Result<Finding, Error> {
     let mut after: Option<String> = None;
     for _ in 0..MAX_PAGES {
@@ -80,11 +84,14 @@ pub(crate) fn check(
         };
         for issuance in &page {
             let key = hex32(&issuance.pubkey_sha256).ok_or(Error::KeyHash)?;
-            if !own.contains(&key) {
-                let certificate = issuance
-                    .cert_sha256
-                    .clone()
-                    .unwrap_or_else(|| issuance.id.clone());
+            if own.contains(&key) {
+                continue;
+            }
+            let certificate = issuance
+                .cert_sha256
+                .clone()
+                .unwrap_or_else(|| issuance.id.clone());
+            if !accepted.contains(&certificate) {
                 return Ok(Finding::Foreign(certificate));
             }
         }

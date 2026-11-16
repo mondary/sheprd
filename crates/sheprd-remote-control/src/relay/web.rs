@@ -116,10 +116,14 @@ async fn watch(relays: &Arc<Relays>, endpoint: &Endpoint, agent: &ureq::Agent) -
     }
     let api = relays.transparency.clone();
     let agent = agent.clone();
-    let found = tokio::task::spawn_blocking(move || transparency::check(&agent, &api, &host, &own))
-        .await
-        .map_err(|_| Error::Cancelled)
-        .and_then(|found| found.map_err(Error::from));
+    let dir = store::dir(&relays.state_dir, &key);
+    let found = tokio::task::spawn_blocking(move || {
+        let accepted = store::load_accepted(&dir);
+        transparency::check(&agent, &api, &host, &own, &accepted)
+    })
+    .await
+    .map_err(|_| Error::Cancelled)
+    .and_then(|found| found.map_err(Error::from));
     let checked_ms = now_ms();
     match found {
         Ok(transparency::Finding::Clean) => {
@@ -367,13 +371,24 @@ impl Relays {
         self.restart(endpoint);
     }
 
-    /// Turns web access on `endpoint` on again after an alert: the alert
-    /// goes, and its listener starts over. Blocking.
+    /// Turns web access on `endpoint` on again after an alert: the
+    /// certificate it named is accepted, so the watch does not turn web
+    /// access off again over it while it stays listed, the alert goes, and
+    /// the listener starts over. Another certificate with a foreign key
+    /// still alerts. Blocking.
     pub(crate) fn resume_web(self: &Arc<Self>, endpoint: &str) -> Result<bool, Error> {
         let Some(mut status) = self.web_status(endpoint) else {
             return Ok(false);
         };
-        store::clear_alert(&store::dir(&self.state_dir, endpoint))?;
+        let dir = store::dir(&self.state_dir, endpoint);
+        let alerted = match &status.transparency {
+            Transparency::Alert { certificate, .. } => Some(certificate.clone()),
+            _ => store::load_alert(&dir).map(|alert| alert.certificate),
+        };
+        if let Some(certificate) = alerted.filter(|certificate| !certificate.is_empty()) {
+            store::accept(&dir, &certificate)?;
+        }
+        store::clear_alert(&dir)?;
         status.transparency = Transparency::Unchecked;
         self.web_status
             .lock()

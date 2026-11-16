@@ -15,6 +15,11 @@ const CHAIN: &str = "chain.pem";
 /// A Certificate Transparency alert that turned web access off, kept until
 /// the user turns it on again.
 const ALERT: &str = "alert.json";
+/// The certificates the user turned web access on again after, which the
+/// watch no longer alerts on.
+const ACCEPTED: &str = "accepted.json";
+/// The most accepted certificates kept; the oldest go first.
+const MAX_ACCEPTED: usize = 32;
 
 /// What a kept alert says.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -93,4 +98,31 @@ pub(crate) fn clear_alert(dir: &Path) -> Result<(), Error> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(source) => Err(Error::Remove { path, source }),
     }
+}
+
+/// The certificates accepted in `dir`. One file that does not read
+/// accepts none, so the watch alerts again rather than staying quiet.
+/// Blocking.
+pub(crate) fn load_accepted(dir: &Path) -> Vec<String> {
+    fs::read(dir.join(ACCEPTED))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Adds `certificate` to those accepted in `dir`. Blocking.
+pub(crate) fn accept(dir: &Path, certificate: &str) -> Result<(), Error> {
+    let mut accepted = load_accepted(dir);
+    if accepted.iter().any(|kept| kept == certificate) {
+        return Ok(());
+    }
+    accepted.push(certificate.to_owned());
+    let excess = accepted.len().saturating_sub(MAX_ACCEPTED);
+    accepted.drain(..excess);
+    let path = dir.join(ACCEPTED);
+    let bytes = serde_json::to_vec(&accepted).map_err(|source| Error::Save {
+        path: path.clone(),
+        source: crate::auth::Error::Encode(source),
+    })?;
+    write_private(&path, &bytes).map_err(|source| Error::Save { path, source })
 }

@@ -309,8 +309,12 @@ sessions, refusals, and bytes without names.
   - shows an alert in Sheprd (`sheprd remote status` and `remote web
     status`) and pushes a security notice to paired devices;
   - stays off, kept in `alert.json` beside the relay's web key, until the
-    user turns it on again (control request `ResumeWeb`). Rotating to a new
-    label and key on the way is still to come.
+    user turns it on again (control request `ResumeWeb`). Turning it on
+    accepts that one certificate (`accepted.json`, at most 32), so the
+    watch does not turn web access off again over it while it stays
+    listed; any other certificate with a foreign key, even on the same
+    key, alerts again. Rotating to a new label and key on the way is still
+    to come.
 
   The query names a hostname that CT logs already make public. A failed
   query, an answer that does not parse, or more pages than are read is

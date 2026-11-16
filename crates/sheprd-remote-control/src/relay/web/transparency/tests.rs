@@ -67,7 +67,10 @@ fn page(issuances: &[serde_json::Value]) -> (u16, String) {
 #[test]
 fn only_this_computers_keys_are_clean() {
     let (api, requests) = stub(vec![page(&[issuance("1", OWN)]), page(&[])]);
-    assert_eq!(check(&agent(), &api, HOST, &[OWN]).unwrap(), Finding::Clean);
+    assert_eq!(
+        check(&agent(), &api, HOST, &[OWN], &[]).unwrap(),
+        Finding::Clean
+    );
     let first = requests.recv().unwrap();
     assert!(
         first.contains("domain=abc.fra1.sheprd-relay.dev"),
@@ -85,8 +88,27 @@ fn another_key_on_any_page_is_found() {
         page(&[issuance("2", OWN), issuance("3", [0xbb; 32])]),
     ]);
     assert_eq!(
-        check(&agent(), &api, HOST, &[OWN]).unwrap(),
+        check(&agent(), &api, HOST, &[OWN], &[]).unwrap(),
         Finding::Foreign("cert-3".into())
+    );
+}
+
+#[test]
+fn an_accepted_certificate_is_passed_over_but_not_its_key() {
+    let foreign = [0xbb; 32];
+    let (api, _) = stub(vec![page(&[issuance("3", foreign)]), page(&[])]);
+    assert_eq!(
+        check(&agent(), &api, HOST, &[OWN], &["cert-3".into()]).unwrap(),
+        Finding::Clean
+    );
+    // Another certificate on the same foreign key is still found.
+    let (api, _) = stub(vec![page(&[
+        issuance("3", foreign),
+        issuance("4", foreign),
+    ])]);
+    assert_eq!(
+        check(&agent(), &api, HOST, &[OWN], &["cert-3".into()]).unwrap(),
+        Finding::Foreign("cert-4".into())
     );
 }
 
@@ -103,7 +125,10 @@ fn a_failed_query_is_never_clean() {
     ];
     for answer in cases {
         let (api, _) = stub(vec![answer.clone()]);
-        assert!(check(&agent(), &api, HOST, &[OWN]).is_err(), "{answer:?}");
+        assert!(
+            check(&agent(), &api, HOST, &[OWN], &[]).is_err(),
+            "{answer:?}"
+        );
     }
     // Nothing listening at all.
     let closed = {
@@ -112,7 +137,7 @@ fn a_failed_query_is_never_clean() {
     };
     let api = api(&format!("http://{closed}/v1/issuances")).unwrap();
     assert!(matches!(
-        check(&agent(), &api, HOST, &[OWN]),
+        check(&agent(), &api, HOST, &[OWN], &[]),
         Err(Error::Unreachable(_))
     ));
 }
@@ -124,7 +149,7 @@ fn endless_pages_are_reported_not_trusted() {
         .collect();
     let (api, _) = stub(pages);
     assert!(matches!(
-        check(&agent(), &api, HOST, &[OWN]),
+        check(&agent(), &api, HOST, &[OWN], &[]),
         Err(Error::TooMany)
     ));
 }

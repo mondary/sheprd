@@ -1,7 +1,7 @@
 //! The Certificate Transparency watch end to end: a certificate for this
 //! computer's web name with another key turns web access off on that
 //! relay, tells paired devices, survives a restart, and stays off until
-//! the user turns it on again.
+//! the user turns it on again, which accepts that certificate alone.
 
 use super::*;
 use crate::control::web::Transparency;
@@ -132,8 +132,8 @@ async fn a_certificate_with_another_key_turns_web_access_off_until_resumed() {
         Some(Transparency::Alert { .. })
     ));
 
-    // The user turns it on again, and the name is clean now.
-    foreign.store(false, Ordering::SeqCst);
+    // The user turns it on again while the certificate is still listed:
+    // accepted, it no longer turns web access off.
     let resumer = Arc::clone(&relays);
     let endpoint_name = key_name.clone();
     assert!(
@@ -147,4 +147,6 @@ async fn a_certificate_with_another_key_turns_web_access_off_until_resumed() {
         matches!(transparency(&relays), Some(Transparency::Clean { .. }))
     })
     .await;
+    assert!(relays.wants_web(&endpoint));
+    assert!(foreign.load(Ordering::SeqCst));
 }
