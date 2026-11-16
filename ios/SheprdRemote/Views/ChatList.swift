@@ -115,12 +115,18 @@ struct ChatList: View {
 }
 
 /// One chip per status with agents: its icon and how many. The section
-/// headers below name them, so the chips stay short enough to fit a phone.
+/// headers below name them, so the chips stay short; with larger text they
+/// scroll sideways rather than squeeze.
 private struct CountChips: View {
     var counts: [(status: Home.AgentStatus, count: Int)]
     var tap: (Home.AgentStatus) -> Void
 
     var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) { chips }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+    }
+
+    private var chips: some View {
         HStack(spacing: 8) {
             ForEach(counts, id: \.status) { status, count in
                 Button { tap(status) } label: {
@@ -134,8 +140,8 @@ private struct CountChips: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(count) \(status.label)")
+                .fixedSize()
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 4)

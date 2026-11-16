@@ -216,6 +216,15 @@ final class CollapsedStore {
         computers = CollapsedComputers(UserDefaults.standard.stringArray(forKey: Self.key) ?? [])
         home = CollapsedComputers(UserDefaults.standard.stringArray(forKey: Self.homeKey) ?? [])
     }
+
+    /// Keeps Home's folded workspace sections of `device` to `workspaces`,
+    /// all it has open, agents or not; none for a forgotten computer.
+    /// Saves only when something went.
+    func keepHome(device: String, workspaces: Set<String>) {
+        var kept = home
+        kept.prune(prefix: "\(AgentSort.workspace.rawValue)/\(device)/", keeping: workspaces)
+        if kept != home { home = kept }
+    }
 }
 
 /// The terminal key rows' buttons, kept on this phone.

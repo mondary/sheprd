@@ -44,4 +44,12 @@ import Testing
         collapsed.forget("a")
         #expect(collapsed.devices == ["b"])
     }
+
+    @Test func pruningDropsOnlyMissingKeysUnderThePrefix() {
+        var collapsed = CollapsedComputers(["workspace/a/1", "workspace/a/2", "workspace/b/1", "priority/blocked"])
+        collapsed.prune(prefix: "workspace/a/", keeping: ["2"])
+        #expect(collapsed.devices == ["workspace/a/2", "workspace/b/1", "priority/blocked"])
+        collapsed.prune(prefix: "workspace/a/", keeping: [])
+        #expect(collapsed.devices == ["workspace/b/1", "priority/blocked"])
+    }
 }

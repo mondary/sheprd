@@ -329,6 +329,8 @@ final class Fleet {
     /// When the text shortcuts a computer's home reports were edited; `nil`
     /// from a computer too old to keep them.
     @ObservationIgnored var onShortcutsReported: ((UInt64?, String) -> Void)?
+    /// The ids of every workspace a computer has open, from a live home.
+    @ObservationIgnored var onWorkspaces: ((Set<String>, String) -> Void)?
     /// A computer's copy of the text shortcuts, as fetched, or as it stood
     /// after the offer that goes with it.
     @ObservationIgnored var onShortcuts: ((TextShortcuts, _ offered: TextShortcuts?, String) -> Void)?
@@ -741,6 +743,7 @@ final class Fleet {
             }
             machines[index].home = home
             machines[index].stale = false
+            onWorkspaces?(Set(home.workspaces.map(\.id)), device)
             machines[index].watching = true
             machines[index].updated = .now
             discoverDrafts(on: machines[index])
