@@ -329,19 +329,23 @@ sessions, refusals, and bytes without names.
 
 ## Sheprd and the command line
 
-- **Settings > Remote control > Web access through relay**: off by default.
-  Turning it on opens a confirmation that says the computer's sign-in page
-  will be reachable from the internet. Once on, the section shows the URL,
-  a QR, the certificate's state and expiry, the CT watch's last check, and
-  any alert.
-- **CLI** (`sheprd-control-protocol`, `control/server`, `control/client`):
+- **Settings > Remote control > Relays** (built): each relay has its listen
+  token file and a web access switch, which needs the token file and is off
+  by default. Turning it on opens a confirmation that says the computer's
+  sign-in page will be reachable from the internet and devices pair there
+  with a passkey; turning it off acts at once. Once on, the relay shows the
+  URL, a QR, the certificate's expiry or error, the CT watch's last check,
+  and any alert, with a way to turn web access on again after one.
+- **CLI** (`sheprd-control-protocol`, `control/server`, `control/client`,
+  built):
   - `sheprd remote web status`: per relay, the URL, the certificate's
     expiry, and the CT state.
   - `sheprd remote web enable [--relay NAME]` and `disable`: `enable` opens
-    the confirmation dialog, `disable` acts at once.
+    the same confirmation, which resumes web access at the daemon after an
+    alert (`ResumeWeb`); `disable` acts at once.
 
   All with `--json` and `--window`, `--help`, tests, and `docs/cli.md`.
-- `sheprd remote status --json` reports web access per relay.
+- `sheprd remote status --json` reports web access per relay (built).
 
 ## Threat model
 
