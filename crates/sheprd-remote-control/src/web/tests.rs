@@ -86,6 +86,7 @@ pub(crate) fn state_with(dir: &std::path::Path, hub: Arc<Hub>) -> Shared {
         look: Look::load(dir),
         names: RwLock::new(names),
         near: Mutex::default(),
+        notices: tokio::sync::broadcast::channel(4).0,
         opened: crate::web::attention::Opened::default(),
         port: 7443,
         privacy: Privacy::Generic,

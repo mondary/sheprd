@@ -32,6 +32,9 @@ pub struct Options {
     pub chat_dir: Option<PathBuf>,
     /// The desktop endpoint, when explicitly passed by its service plan.
     pub core_endpoint: crate::core_target::CoreTarget,
+    /// The Certificate Transparency search web names on relays are looked
+    /// up at, instead of Cert Spotter's.
+    pub ct_api: Option<url::Url>,
     /// How long a device may stay away before it is forgotten; `None`
     /// keeps it until revoked.
     pub device_idle: Option<Duration>,
@@ -178,6 +181,8 @@ Options:
                            listen token in FILE
   --relay-web              Let browsers reach this computer at its web name on
                            the --relay before it (a private relay's)
+  --ct-api URL             The Certificate Transparency search to watch web
+                           names with (default Cert Spotter's issuances API)
   --no-bonjour             Do not advertise over Bonjour; phones then pair
                            by QR code only (on macOS, Sheprd advertises
                            while its pairing dialog is open instead)
@@ -232,6 +237,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
     let mut bonjour = true;
     let mut github_cli = false;
     let mut relays = Vec::new();
+    let mut ct_api = None;
     while let Some(arg) = args.next() {
         let name = arg.to_str().unwrap_or_default().to_owned();
         let mut value = |option: &'static str| args.next().ok_or(ParseError::Missing(option));
@@ -323,6 +329,13 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
                 last_relay(&mut relays, "--relay-token-file")?.token_file = Some(path);
             }
             "--relay-web" => last_relay(&mut relays, "--relay-web")?.web = true,
+            "--ct-api" => {
+                let text = text(value("--ct-api")?, "--ct-api")?;
+                ct_api = Some(
+                    crate::relay::web::transparency::api(&text)
+                        .map_err(|_| ParseError::Value { option: "--ct-api" })?,
+                );
+            }
             "--no-bonjour" => bonjour = false,
             "--github-cli" => github_cli = true,
             "-h" | "--help" => return Ok(Invocation::Help),
@@ -358,6 +371,7 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
         bonjour,
         certificate,
         chat_dir,
+        ct_api,
         core_endpoint,
         device_idle: (idle_days != 0).then(|| Duration::from_secs(idle_days * 24 * 60 * 60)),
         github_cli,

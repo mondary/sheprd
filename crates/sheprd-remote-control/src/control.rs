@@ -18,6 +18,7 @@ pub mod pull_requests;
 pub mod relays;
 pub mod shortcuts;
 pub mod tags;
+pub mod web;
 use serde::{Deserialize, Serialize};
 use std::{
     io::{BufReader, BufWriter, Write},
@@ -236,6 +237,13 @@ pub enum Request {
         id: changes::AskId,
         answer: layout::Answer,
     },
+    /// Lets browsers reach this computer through `relay` again after a
+    /// Certificate Transparency alert turned web access off there
+    /// (`web::Transparency::Alert`). Sheprd sends it once the user
+    /// confirmed; answered with `Done`.
+    ResumeWeb {
+        relay: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -381,6 +389,10 @@ pub struct RelayStatus {
     pub label: crate::relay_label::RelayLabel,
     #[serde(flatten)]
     pub state: RelayState,
+    /// Web access through it, when `[remote] relays` turns it on; an
+    /// older daemon omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web: Option<web::WebStatus>,
 }
 
 impl From<RelayState> for RelayStatus {
@@ -388,6 +400,7 @@ impl From<RelayState> for RelayStatus {
         Self {
             label: crate::relay_label::RelayLabel::default(),
             state,
+            web: None,
         }
     }
 }

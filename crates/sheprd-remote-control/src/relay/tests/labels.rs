@@ -98,6 +98,7 @@ fn status_names_each_relay_with_its_label() {
         RelayStatus {
             label: fra3(),
             state: Status::Listening { rtt_ms: None },
+            web: None,
         }
     );
     assert_eq!(

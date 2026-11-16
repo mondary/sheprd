@@ -12,6 +12,7 @@ fn a_relay_status_carries_its_label_beside_its_state() {
         state: RelayState::Failed {
             error: "unreachable".into(),
         },
+        web: None,
     };
     let wire = json!({
         "state": "failed", "error": "unreachable",
@@ -47,8 +48,37 @@ fn a_listening_relays_round_trip_sits_beside_its_label() {
             ..RelayLabel::default()
         },
         state: RelayState::Listening { rtt_ms: Some(42) },
+        web: None,
     };
     let wire = json!({"state": "listening", "rtt_ms": 42, "name": "fra3"});
+    assert_eq!(serde_json::to_value(&status).unwrap(), wire);
+    assert_eq!(serde_json::from_value::<RelayStatus>(wire).unwrap(), status);
+}
+
+#[test]
+fn web_access_sits_under_its_own_key() {
+    use crate::control::web::{Transparency, WebStatus};
+    let status = RelayStatus {
+        label: RelayLabel::default(),
+        state: RelayState::Connecting,
+        web: Some(WebStatus {
+            url: Some("https://abc.fra1.sheprd-relay.dev".into()),
+            expires_ms: Some(9),
+            error: None,
+            transparency: Transparency::Alert {
+                certificate: "ab".into(),
+                found_ms: 7,
+            },
+        }),
+    };
+    let wire = json!({
+        "state": "connecting",
+        "web": {
+            "url": "https://abc.fra1.sheprd-relay.dev",
+            "expires_ms": 9,
+            "transparency": {"state": "alert", "certificate": "ab", "found_ms": 7},
+        },
+    });
     assert_eq!(serde_json::to_value(&status).unwrap(), wire);
     assert_eq!(serde_json::from_value::<RelayStatus>(wire).unwrap(), status);
 }

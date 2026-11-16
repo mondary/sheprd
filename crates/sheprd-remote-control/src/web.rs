@@ -99,6 +99,9 @@ pub(crate) struct State {
     /// Devices whose owner is at this computer, as Sheprd last said:
     /// their alerts wait until they leave.
     pub(crate) near: Mutex<crate::push::Near>,
+    /// Notices for every paired device that are about no chat, such as a
+    /// security alert; the notifier sends them.
+    pub(crate) notices: tokio::sync::broadcast::Sender<crate::push::Notification>,
     /// What phones have looked at, for the badge.
     pub(crate) opened: attention::Opened,
     pub(crate) port: u16,
@@ -130,6 +133,12 @@ impl State {
 
     pub(crate) fn updates(&self) -> MutexGuard<'_, update::Relay> {
         self.updates.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Sends `notice` to every paired device that takes notifications.
+    pub(crate) fn notify_all(&self, notice: crate::push::Notification) {
+        // None subscribed: push is off, and Sheprd's status says it anyway.
+        let _ = self.notices.send(notice);
     }
 
     pub(crate) fn near(&self) -> MutexGuard<'_, crate::push::Near> {

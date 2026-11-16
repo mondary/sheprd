@@ -39,6 +39,9 @@ pub(crate) enum Kind {
     // keep-sorted start
     Error,
     Question,
+    /// Something about this computer's security the user must see, such as
+    /// web access turned off after a Certificate Transparency alert.
+    Security,
     /// An agent in a plain terminal waits for the user.
     TerminalAsking,
     /// An agent in a plain terminal finished what it was doing.
@@ -113,6 +116,20 @@ impl Notification {
         }
     }
 
+    /// A security notice for every paired device, opening Settings.
+    pub(crate) fn security(title: String, body: String) -> Self {
+        Self {
+            body,
+            clear: false,
+            kind: Kind::Security,
+            pane: String::new(),
+            permission: None,
+            tag: "security".to_owned(),
+            title,
+            urgency: Urgency::High,
+        }
+    }
+
     /// Moves the badge alone: no pane has this notification to close.
     pub(crate) fn badge() -> Self {
         Self::cleared("")
@@ -128,15 +145,14 @@ impl Notification {
             kind: self.kind,
             tag: self.tag.clone(),
             title: self.title.clone(),
-            url: format!(
-                "/{}/{}",
-                if self.kind.is_terminal() {
-                    "term"
-                } else {
-                    "chat"
-                },
-                path_segment(&self.pane)
-            ),
+            url: match self.kind {
+                Kind::Security => "/settings".to_owned(),
+                kind => format!(
+                    "/{}/{}",
+                    if kind.is_terminal() { "term" } else { "chat" },
+                    path_segment(&self.pane)
+                ),
+            },
         }
     }
 }

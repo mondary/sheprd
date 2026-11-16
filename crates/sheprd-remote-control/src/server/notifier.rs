@@ -37,6 +37,7 @@ pub(super) async fn run(state: Arc<State>) {
     }
     let mut live = super::live::LiveActivities::default();
     let mut events = state.hub.subscribe_all();
+    let mut notices = state.notices.subscribe();
     let mut transcripts: HashMap<String, Base> = HashMap::new();
     let mut throttles: HashMap<DeviceId, Throttle> = HashMap::new();
     let mut outbox = Outbox::default();
@@ -83,6 +84,13 @@ pub(super) async fn run(state: Arc<State>) {
                 }
                 Ok((_, Event::Connection)) => {}
                 Err(RecvError::Lagged(_)) => transcripts.clear(),
+                Err(RecvError::Closed) => return,
+            },
+            notice = notices.recv() => match notice {
+                Ok(notice) => offer(&state, &mut throttles, &mut holds, &mut outbox, notice),
+                // A notice missed while the notifier was busy is still in
+                // the log and Sheprd's status.
+                Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => return,
             },
             _ = ticker.tick() => {

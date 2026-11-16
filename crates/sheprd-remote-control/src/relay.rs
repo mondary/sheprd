@@ -112,12 +112,20 @@ pub(crate) struct Relays {
     state_dir: PathBuf,
     /// Each relay's state, for `sheprd remote status`.
     status: Mutex<BTreeMap<String, Status>>,
+    /// The Certificate Transparency search web names are looked up at.
+    transparency: url::Url,
     /// What browsers are served with, by endpoint, once a relay's web
     /// certificate is good.
     web: Mutex<BTreeMap<String, web::Serving>>,
+    /// SHA-256 of each web key's SubjectPublicKeyInfo, by endpoint: what
+    /// the CT watch takes as this computer's own.
+    web_keys: Mutex<BTreeMap<String, Vec<[u8; 32]>>>,
     /// The roots a web certificate must chain to: the public ones, but a
     /// test's own CA in tests.
     web_roots: rustls::RootCertStore,
+    /// Web access on each relay `[remote] relays` turns it on for, for
+    /// `sheprd remote web status`; an alert kept here keeps it off.
+    web_status: Mutex<BTreeMap<String, control::web::WebStatus>>,
 }
 
 /// The listeners running, once [`Relays::start`] said what they serve.
@@ -177,6 +185,7 @@ impl Relays {
             .map(|relay| (relay.endpoint.to_string(), relay.label.clone()))
             .collect();
         let access = access::load(&relays)?;
+        let web_status = web::initial_status(state_dir, &access);
         Ok(Self {
             access,
             changed: watch::Sender::new(0),
@@ -191,8 +200,11 @@ impl Relays {
             shared_file,
             state_dir: state_dir.to_owned(),
             status: Mutex::default(),
+            transparency: web::default_transparency()?,
             web: Mutex::default(),
+            web_keys: Mutex::default(),
             web_roots: web::public_roots(),
+            web_status: Mutex::new(web_status),
         })
     }
 
@@ -211,11 +223,11 @@ impl Relays {
         self.web_roots = roots;
     }
 
-    /// Whether browsers should reach this computer through `endpoint`.
+    /// Whether browsers should reach this computer through `endpoint`:
+    /// turned on for it, and no Certificate Transparency alert stopped it.
     pub(crate) fn wants_web(&self, endpoint: &Endpoint) -> bool {
-        self.access
-            .get(&endpoint.to_string())
-            .is_some_and(|access| access.web)
+        let key = endpoint.to_string();
+        self.access.get(&key).is_some_and(|access| access.web) && !self.web_alerted(&key)
     }
 
     /// Serves browsers on `endpoint` with `serving` from now on.
@@ -358,6 +370,7 @@ impl Relays {
                 let status = RelayStatus {
                     label: self.labels.get(endpoint).cloned().unwrap_or_default(),
                     state,
+                    web: self.web_status(endpoint),
                 };
                 (endpoint.clone(), status)
             })
@@ -372,6 +385,31 @@ impl Relays {
             Some(rtt) => times.insert(endpoint.to_string(), rtt),
             None => times.remove(&endpoint.to_string()),
         };
+    }
+
+    /// The daemon's state, once the listeners started.
+    fn served_state(&self) -> Option<crate::web::Shared> {
+        self.running
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .started
+            .as_ref()
+            .map(|started| started.served.state.clone())
+    }
+
+    /// Stops `endpoint`'s listener and starts it again, so it listens as
+    /// [`Self::wants_web`] says now.
+    fn restart(self: &Arc<Self>, endpoint: &str) {
+        let stopped = self
+            .running
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .listeners
+            .remove(endpoint);
+        if let Some(stop) = stopped {
+            let _ = stop.send(true);
+        }
+        self.follow();
     }
 
     /// Records a listener's state, unless it was stopped meanwhile: a

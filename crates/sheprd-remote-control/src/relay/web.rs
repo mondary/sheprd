@@ -8,6 +8,7 @@
 mod check;
 mod error;
 mod store;
+pub(crate) mod transparency;
 
 pub(crate) use check::{Issued, check, public_roots};
 pub use error::Error;
@@ -15,7 +16,8 @@ pub use error::Error;
 pub(crate) use store::dir as store_dir;
 
 use super::Relays;
-use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+use crate::control::web::{Transparency, WebStatus};
+use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256, PublicKeyData as _};
 use rustls::{
     ServerConfig,
     crypto::ring,
@@ -26,9 +28,12 @@ use sheprd_relay::{
     client::{self, Connection},
 };
 use std::{
-    sync::Arc,
-    time::{Duration, SystemTime},
+    collections::BTreeMap,
+    path::Path,
+    sync::{Arc, PoisonError},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tokio::time::Instant;
 
 /// The first wait after a failed attempt: the relay allows one every ten
 /// minutes per computer.
@@ -49,30 +54,102 @@ pub(crate) struct Serving {
 }
 
 /// Keeps `endpoint`'s web certificate current over `connection`, served
-/// as soon as one is good, until the connection closes.
+/// as soon as one is good, and watches Certificate Transparency for its
+/// name, every hour and after each issuance, until the connection closes.
+/// A certificate with another key turns web access off on this relay.
 pub(super) async fn renew(relays: Arc<Relays>, endpoint: Endpoint, connection: Connection) {
     let mut retry = FIRST_RETRY;
+    let mut renew_at = Instant::now();
+    let mut check_at = Instant::now();
+    let agent = transparency::agent();
     loop {
-        let wait = match current(&relays, &endpoint, &connection).await {
-            Ok(renew_at) => {
-                retry = FIRST_RETRY;
-                renew_at
-                    .duration_since(SystemTime::now())
-                    .unwrap_or_default()
-                    .max(LEAST_WAIT)
+        if Instant::now() >= renew_at {
+            renew_at = match current(&relays, &endpoint, &connection).await {
+                Ok(Current { renew_at, issued }) => {
+                    retry = FIRST_RETRY;
+                    if issued {
+                        check_at = Instant::now();
+                    }
+                    let wait = renew_at
+                        .duration_since(SystemTime::now())
+                        .unwrap_or_default()
+                        .max(LEAST_WAIT);
+                    Instant::now() + wait
+                }
+                Err(error) => {
+                    tracing::warn!(relay = %endpoint, error = %error, "no web certificate yet");
+                    relays.set_web_status(&endpoint, |status| {
+                        status.error = Some(error.to_string());
+                    });
+                    let wait = retry;
+                    retry = (retry * 2).min(LONGEST_RETRY);
+                    Instant::now() + wait
+                }
+            };
+        }
+        if Instant::now() >= check_at {
+            if watch(&relays, &endpoint, &agent).await {
+                return;
             }
-            Err(error) => {
-                tracing::warn!(relay = %endpoint, error = %error, "no web certificate yet");
-                let wait = retry;
-                retry = (retry * 2).min(LONGEST_RETRY);
-                wait
-            }
-        };
+            check_at = Instant::now() + transparency::EVERY;
+        }
         tokio::select! {
-            () = tokio::time::sleep(wait) => {}
+            () = tokio::time::sleep_until(renew_at.min(check_at)) => {}
             _ = connection.closed() => return,
         }
     }
+}
+
+/// One Certificate Transparency lookup of `endpoint`'s web name, recorded
+/// in its status; true when it found another key and turned web access
+/// off.
+async fn watch(relays: &Arc<Relays>, endpoint: &Endpoint, agent: &ureq::Agent) -> bool {
+    let key = endpoint.to_string();
+    let Some(host) = endpoint.web_host(&client::route(&relays.keys.route)) else {
+        return false;
+    };
+    let own = relays.web_keys(&key);
+    // Before this computer has a key there, any certificate would look
+    // foreign; the first lookup follows the first key.
+    if own.is_empty() {
+        return false;
+    }
+    let api = relays.transparency.clone();
+    let agent = agent.clone();
+    let found = tokio::task::spawn_blocking(move || transparency::check(&agent, &api, &host, &own))
+        .await
+        .map_err(|_| Error::Cancelled)
+        .and_then(|found| found.map_err(Error::from));
+    let checked_ms = now_ms();
+    match found {
+        Ok(transparency::Finding::Clean) => {
+            relays.set_web_status(endpoint, |status| {
+                status.transparency = Transparency::Clean { checked_ms };
+            });
+            false
+        }
+        Ok(transparency::Finding::Foreign(certificate)) => {
+            relays.web_alert(&key, certificate, checked_ms).await;
+            true
+        }
+        Err(error) => {
+            tracing::warn!(relay = %endpoint, error = %error, "could not check Certificate Transparency");
+            relays.set_web_status(endpoint, |status| {
+                status.transparency = Transparency::Failed {
+                    error: error.to_string(),
+                    checked_ms,
+                };
+            });
+            false
+        }
+    }
+}
+
+/// What [`current`] leaves: when to look again, and whether it got a new
+/// certificate, which the CT watch then looks for.
+struct Current {
+    renew_at: SystemTime,
+    issued: bool,
 }
 
 /// Serves the kept certificate while it is good, and asks for a new one
@@ -81,7 +158,7 @@ async fn current(
     relays: &Relays,
     endpoint: &Endpoint,
     connection: &Connection,
-) -> Result<SystemTime, Error> {
+) -> Result<Current, Error> {
     let host = endpoint
         .web_host(&client::route(&relays.keys.route))
         .ok_or(Error::NoName)?;
@@ -93,13 +170,21 @@ async fn current(
     .await?;
     let roots = &relays.web_roots;
     let mut key = None;
+    relays.set_web_status(endpoint, |status| {
+        status.url = Some(format!("https://{host}"));
+    });
     if let Some((der, pem)) = kept
         && let Ok(pair) = KeyPair::try_from(der.as_slice())
     {
+        relays.own_web_key(endpoint, &pair);
         if let Ok(issued) = check(&pem, &pair, &host, roots, SystemTime::now()) {
             relays.serve_web(endpoint, serving(&issued, &pair, &host)?);
+            relays.served_until(endpoint, issued.not_after);
             if SystemTime::now() < issued.renew_at() {
-                return Ok(issued.renew_at());
+                return Ok(Current {
+                    renew_at: issued.renew_at(),
+                    issued: false,
+                });
             }
         }
         // Renewing keeps the key, so a pinned key stays pinned.
@@ -109,6 +194,9 @@ async fn current(
         Some(key) => key,
         None => KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?,
     };
+    // Known as this computer's before the CA logs it, so the CT watch
+    // never takes the certificate being ordered for another's.
+    relays.own_web_key(endpoint, &key);
     let csr = CertificateParams::new(vec![host.clone()])?.serialize_request(&key)?;
     let pem = client::certificate(connection, &relays.keys.route, csr.der())
         .await
@@ -117,8 +205,12 @@ async fn current(
     let der = key.serialize_der();
     blocking(move || store::save(&dir, &der, &pem)).await?;
     relays.serve_web(endpoint, serving(&issued, &key, &host)?);
+    relays.served_until(endpoint, issued.not_after);
     tracing::info!(relay = %endpoint, "serving browsers with a new web certificate");
-    Ok(issued.renew_at())
+    Ok(Current {
+        renew_at: issued.renew_at(),
+        issued: true,
+    })
 }
 
 /// The TLS browsers are served with: `issued` and its `key`, HTTP/1.1.
@@ -134,6 +226,172 @@ fn serving(issued: &Issued, key: &KeyPair, host: &str) -> Result<Serving, Error>
         host: host.to_owned(),
         origin: format!("https://{host}"),
     })
+}
+
+/// The web status of each relay `access` turns web access on for, with
+/// any alert kept from before. Blocking.
+pub(super) fn initial_status(
+    state_dir: &Path,
+    access: &BTreeMap<String, super::access::Access>,
+) -> BTreeMap<String, WebStatus> {
+    access
+        .iter()
+        .filter(|(_, access)| access.web)
+        .map(|(endpoint, _)| {
+            let transparency = store::load_alert(&store::dir(state_dir, endpoint))
+                .map(|alert| Transparency::Alert {
+                    certificate: alert.certificate,
+                    found_ms: alert.found_ms,
+                })
+                .unwrap_or_default();
+            let status = WebStatus {
+                transparency,
+                ..WebStatus::default()
+            };
+            (endpoint.clone(), status)
+        })
+        .collect()
+}
+
+/// The CT search used unless the daemon is told another.
+pub(super) fn default_transparency() -> Result<url::Url, Error> {
+    Ok(transparency::api(transparency::DEFAULT_API)?)
+}
+
+impl Relays {
+    /// Looks web names up at `api` instead of Cert Spotter.
+    pub(crate) fn set_transparency(&mut self, api: url::Url) {
+        self.transparency = api;
+    }
+
+    /// Web access on `endpoint`, when it is turned on there.
+    pub(super) fn web_status(&self, endpoint: &str) -> Option<WebStatus> {
+        self.web_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(endpoint)
+            .cloned()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn status_for_tests(&self, endpoint: &str) -> Option<WebStatus> {
+        self.web_status(endpoint)
+    }
+
+    /// Whether a CT alert turned web access off on `endpoint`.
+    pub(super) fn web_alerted(&self, endpoint: &str) -> bool {
+        self.web_status(endpoint)
+            .is_some_and(|status| matches!(status.transparency, Transparency::Alert { .. }))
+    }
+
+    fn set_web_status(&self, endpoint: &Endpoint, change: impl FnOnce(&mut WebStatus)) {
+        if let Some(status) = self
+            .web_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_mut(&endpoint.to_string())
+        {
+            change(status);
+        }
+    }
+
+    /// Records the certificate served on `endpoint` until `not_after`.
+    fn served_until(&self, endpoint: &Endpoint, not_after: SystemTime) {
+        self.set_web_status(endpoint, |status| {
+            status.expires_ms = Some(millis(not_after));
+            status.error = None;
+        });
+    }
+
+    /// Takes `key` as one of this computer's web keys on `endpoint`.
+    fn own_web_key(&self, endpoint: &Endpoint, key: &KeyPair) {
+        use sha2::Digest as _;
+        let hash: [u8; 32] = sha2::Sha256::digest(key.subject_public_key_info()).into();
+        let mut keys = self.web_keys.lock().unwrap_or_else(PoisonError::into_inner);
+        let own = keys.entry(endpoint.to_string()).or_default();
+        if !own.contains(&hash) {
+            own.push(hash);
+        }
+    }
+
+    fn web_keys(&self, endpoint: &str) -> Vec<[u8; 32]> {
+        self.web_keys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(endpoint)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// A certificate for `endpoint`'s web name has another key: web access
+    /// goes off there, kept off across restarts until the user turns it on
+    /// again, and paired devices are told.
+    async fn web_alert(self: &Arc<Self>, endpoint: &str, certificate: String, found_ms: u64) {
+        tracing::error!(
+            relay = %endpoint,
+            %certificate,
+            "Certificate Transparency lists a certificate for this computer's web name with another key; web access is off on this relay"
+        );
+        let alert = store::Alert {
+            certificate: certificate.clone(),
+            found_ms,
+        };
+        let dir = store::dir(&self.state_dir, endpoint);
+        if let Err(error) = blocking(move || store::save_alert(&dir, &alert)).await {
+            // Off for now all the same; only a restart forgets it.
+            tracing::error!(relay = %endpoint, error = %error, "could not keep the web access alert");
+        }
+        if let Some(status) = self
+            .web_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_mut(endpoint)
+        {
+            status.transparency = Transparency::Alert {
+                certificate,
+                found_ms,
+            };
+        }
+        self.web
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(endpoint);
+        if let Some(state) = self.served_state() {
+            state.notify_all(crate::push::Notification::security(
+                "Web access turned off".to_owned(),
+                format!(
+                    "A certificate for this computer's web address on {endpoint} was issued to someone else. Check Sheprd's Remote control settings."
+                ),
+            ));
+        }
+        self.restart(endpoint);
+    }
+
+    /// Turns web access on `endpoint` on again after an alert: the alert
+    /// goes, and its listener starts over. Blocking.
+    pub(crate) fn resume_web(self: &Arc<Self>, endpoint: &str) -> Result<bool, Error> {
+        let Some(mut status) = self.web_status(endpoint) else {
+            return Ok(false);
+        };
+        store::clear_alert(&store::dir(&self.state_dir, endpoint))?;
+        status.transparency = Transparency::Unchecked;
+        self.web_status
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(endpoint.to_owned(), status);
+        self.restart(endpoint);
+        Ok(true)
+    }
+}
+
+fn millis(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH).map_or(0, |since| {
+        u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+    })
+}
+
+fn now_ms() -> u64 {
+    millis(SystemTime::now())
 }
 
 /// Runs file work off the runtime's threads.

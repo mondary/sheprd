@@ -240,6 +240,23 @@ pub(crate) fn answer(state: &State, stop: &watch::Sender<bool>, request: Request
                 },
             };
         }
+        Request::ResumeWeb { relay: endpoint } => {
+            let resumed = state
+                .relay
+                .as_ref()
+                .map(|relay| relay.resume_web(&endpoint));
+            return match resumed {
+                Some(Ok(true)) => Response::Done,
+                Some(Ok(false)) | None => Response::Error {
+                    code: ErrorCode::Other,
+                    message: format!("web access is not turned on for {endpoint}"),
+                },
+                Some(Err(error)) => Response::Error {
+                    code: ErrorCode::Unsaved,
+                    message: error.to_string(),
+                },
+            };
+        }
         Request::Shortcuts { offer } => {
             let Some(offer) = offer else {
                 return Response::Shortcuts(state.shortcuts.current());

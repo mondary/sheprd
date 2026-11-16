@@ -24,6 +24,12 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("could not remove {}", path.display())]
+    Remove {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("there are no roots to check the web certificate against")]
     Roots(#[from] rustls::client::VerifierBuilderError),
     #[error("could not save the web certificate in {}", path.display())]
@@ -34,6 +40,8 @@ pub enum Error {
     },
     #[error("could not set up TLS with the web certificate")]
     Tls(#[from] rustls::Error),
+    #[error(transparent)]
+    Transparency(#[from] super::transparency::Error),
     #[error("the relay's certificate does not chain to a public root for this name")]
     Untrusted(#[source] rustls::Error),
     #[error("the relay's certificate is for another key than this computer's")]

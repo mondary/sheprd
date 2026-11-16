@@ -35,6 +35,8 @@ use tokio::sync::watch;
 /// Tailscale coming up gets a certificate that names it.
 const ADDRESS_CHECK: Duration = Duration::from_secs(30);
 /// How often idle devices and expired pictures are forgotten.
+/// Notices about no chat queued for the notifier.
+const NOTICES: usize = 8;
 const IDLE_CHECK: Duration = Duration::from_secs(60 * 60);
 /// Who push services may contact about this sender.
 const PUSH_SUBJECT: &str = "https://github.com/sheprd-labs/sheprd";
@@ -111,7 +113,12 @@ pub async fn run(options: Options) -> Result<()> {
     // Kept even with no relay set, for ones another computer shares later.
     // Only a computer told to listen on relays fails without its keys.
     let relay = match crate::relay::Relays::load(&options.state_dir, options.relays.clone()) {
-        Ok(relay) => Some(Arc::new(relay)),
+        Ok(mut relay) => {
+            if let Some(api) = &options.ct_api {
+                relay.set_transparency(api.clone());
+            }
+            Some(Arc::new(relay))
+        }
         Err(error) if options.relays.is_empty() => {
             tracing::warn!(%error, "Could not load the relay keys; relays shared later are ignored");
             None
@@ -134,6 +141,7 @@ pub async fn run(options: Options) -> Result<()> {
         look: web::Look::load(&options.state_dir),
         names: RwLock::new(names),
         near: Mutex::default(),
+        notices: tokio::sync::broadcast::channel(NOTICES).0,
         opened: web::attention::Opened::default(),
         port: options.port,
         privacy: options.privacy,

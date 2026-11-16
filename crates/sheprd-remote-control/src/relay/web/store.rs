@@ -12,6 +12,16 @@ use std::{
 
 const KEY: &str = "key.der";
 const CHAIN: &str = "chain.pem";
+/// A Certificate Transparency alert that turned web access off, kept until
+/// the user turns it on again.
+const ALERT: &str = "alert.json";
+
+/// What a kept alert says.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Alert {
+    pub(crate) certificate: String,
+    pub(crate) found_ms: u64,
+}
 
 /// The directory for `endpoint`'s web certificate.
 #[must_use]
@@ -48,4 +58,39 @@ pub(crate) fn save(dir: &Path, key: &[u8], chain: &str) -> Result<(), Error> {
         write_private(&path, bytes).map_err(|source| Error::Save { path, source })?;
     }
     Ok(())
+}
+
+/// The alert kept in `dir`, if any. One that does not read is still an
+/// alert: web access stays off rather than trusting a damaged file.
+/// Blocking.
+pub(crate) fn load_alert(dir: &Path) -> Option<Alert> {
+    let bytes = match fs::read(dir.join(ALERT)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
+        Err(_) => Vec::new(),
+    };
+    Some(serde_json::from_slice(&bytes).unwrap_or(Alert {
+        certificate: String::new(),
+        found_ms: 0,
+    }))
+}
+
+/// Keeps `alert` in `dir`. Blocking.
+pub(crate) fn save_alert(dir: &Path, alert: &Alert) -> Result<(), Error> {
+    let path = dir.join(ALERT);
+    let bytes = serde_json::to_vec(alert).map_err(|source| Error::Save {
+        path: path.clone(),
+        source: crate::auth::Error::Encode(source),
+    })?;
+    write_private(&path, &bytes).map_err(|source| Error::Save { path, source })
+}
+
+/// Forgets the alert in `dir`. Blocking.
+pub(crate) fn clear_alert(dir: &Path) -> Result<(), Error> {
+    let path = dir.join(ALERT);
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(Error::Remove { path, source }),
+    }
 }

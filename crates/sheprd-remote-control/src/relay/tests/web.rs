@@ -237,3 +237,5 @@ async fn a_browser_reaches_the_app_through_a_private_relays_front() {
     let response = String::from_utf8_lossy(&response);
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
 }
+
+mod transparency;
