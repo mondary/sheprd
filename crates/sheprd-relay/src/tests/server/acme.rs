@@ -78,6 +78,7 @@ fn a_computer_waits_between_attempts_and_longer_after_a_certificate() {
     );
     let start = Instant::now();
     assert!(ration.attempt(first, start).is_ok());
+    ration.failed();
     // A failed attempt holds the computer back for the retry delay only.
     assert!(matches!(ration.attempt(first, start), Err(Error::Rationed)));
     let later = start + acme::ration::RETRY;
@@ -92,6 +93,7 @@ fn a_computer_waits_between_attempts_and_longer_after_a_certificate() {
             .attempt(first, later + acme::ration::PER_COMPUTER)
             .is_ok()
     );
+    ration.failed();
     // The relay's weekly allowance holds across computers.
     assert!(ration.attempt(second, later).is_ok());
     ration.issued(second, later);
@@ -228,4 +230,22 @@ async fn the_front_answers_a_pending_challenge_with_its_certificate() {
         .await
         .unwrap();
     assert!(matches!(read, Ok(0) | Err(_)));
+}
+
+#[test]
+fn orders_running_at_once_cannot_pass_the_weekly_allowance_together() {
+    let mut ration = Ration::new(1);
+    let now = Instant::now();
+    let (first, second) = (RouteId::from_bytes([1; 32]), RouteId::from_bytes([2; 32]));
+    assert!(ration.attempt(first, now).is_ok());
+    // The first order still runs: its certificate is reserved.
+    assert!(matches!(ration.attempt(second, now), Err(Error::Weekly)));
+    // It failed, so the reservation is free again.
+    ration.failed();
+    assert!(ration.attempt(second, now).is_ok());
+    ration.issued(second, now);
+    assert!(matches!(
+        ration.attempt(RouteId::from_bytes([3; 32]), now),
+        Err(Error::Weekly)
+    ));
 }

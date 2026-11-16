@@ -27,6 +27,10 @@ pub struct Ration {
     computers: HashMap<RouteId, (Instant, bool)>,
     /// When each certificate this week was issued.
     issued: VecDeque<Instant>,
+    /// Orders running now, each holding one of the week's certificates
+    /// until it is issued or fails, so orders running at once cannot pass
+    /// the allowance together.
+    reserved: usize,
     weekly: usize,
 }
 
@@ -37,11 +41,14 @@ impl Ration {
         Self {
             computers: HashMap::new(),
             issued: VecDeque::new(),
+            reserved: 0,
             weekly,
         }
     }
 
-    /// Takes an attempt for `route` at `now`, or says why not.
+    /// Takes an attempt for `route` at `now`, reserving one of the week's
+    /// certificates until [`Ration::issued`] or [`Ration::failed`], or says
+    /// why not.
     pub fn attempt(&mut self, route: RouteId, now: Instant) -> Result<(), Error> {
         while self
             .issued
@@ -56,20 +63,28 @@ impl Ration {
                 return Err(Error::Rationed);
             }
         }
-        if self.issued.len() >= self.weekly {
+        if self.issued.len().saturating_add(self.reserved) >= self.weekly {
             return Err(Error::Weekly);
         }
         if self.computers.len() >= MAX_REMEMBERED && !self.computers.contains_key(&route) {
             self.forget_oldest();
         }
         self.computers.insert(route, (now, false));
+        self.reserved += 1;
         Ok(())
     }
 
     /// Records that `route`'s attempt at `now` got a certificate.
     pub fn issued(&mut self, route: RouteId, now: Instant) {
+        self.reserved = self.reserved.saturating_sub(1);
         self.computers.insert(route, (now, true));
         self.issued.push_back(now);
+    }
+
+    /// Gives back an attempt's reservation: it got no certificate. The
+    /// computer still waits [`RETRY`] before the next.
+    pub fn failed(&mut self) {
+        self.reserved = self.reserved.saturating_sub(1);
     }
 
     fn forget_oldest(&mut self) {

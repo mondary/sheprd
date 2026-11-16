@@ -107,10 +107,17 @@ impl Issuer {
         csr::check(csr, &host)?;
         let _order = self.orders.try_acquire().map_err(|_| Error::Busy)?;
         self.ration().attempt(route, Instant::now())?;
+        // Gives the reservation back however the order ends, a dropped
+        // request included, unless a certificate was issued.
+        let mut reserved = Reserved {
+            issuer: self,
+            issued: false,
+        };
         let chain = timeout(ORDER_TIMEOUT, self.order(label, &host, csr))
             .await
             .map_err(|_| Error::TimedOut)??;
         self.ration().issued(route, Instant::now());
+        reserved.issued = true;
         Ok(chain)
     }
 
@@ -179,6 +186,20 @@ impl Issuer {
         );
         *held = Some(account.clone());
         Ok(account)
+    }
+}
+
+/// One order's hold on the week's allowance.
+struct Reserved<'a> {
+    issuer: &'a Issuer,
+    issued: bool,
+}
+
+impl Drop for Reserved<'_> {
+    fn drop(&mut self) {
+        if !self.issued {
+            self.issuer.ration().failed();
+        }
     }
 }
 
