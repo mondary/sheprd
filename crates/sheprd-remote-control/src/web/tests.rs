@@ -43,6 +43,7 @@ mod tags;
 #[cfg(unix)]
 mod term_history;
 mod terminal;
+mod typed;
 mod update;
 mod uploads;
 

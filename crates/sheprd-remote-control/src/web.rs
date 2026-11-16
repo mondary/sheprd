@@ -27,6 +27,7 @@ mod shortcuts;
 mod stream;
 mod tags;
 mod terminal;
+mod typed;
 mod update;
 mod uploads;
 
@@ -41,6 +42,7 @@ pub(crate) use shortcuts::Shortcuts;
 pub(crate) use stream::Connected;
 pub(crate) use tags::Tags;
 pub(crate) use terminal::read_scrolled;
+pub(crate) use typed::{Relayed, TypedFrom};
 pub(crate) use uploads::Uploads;
 
 use crate::control::DeviceId;

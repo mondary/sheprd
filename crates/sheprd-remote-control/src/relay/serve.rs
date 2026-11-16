@@ -3,7 +3,7 @@
 //! API, as axum serves it on the network.
 
 use super::{Relays, Result, Served};
-use crate::web::{Peer, Shared};
+use crate::web::{Peer, Relayed, Shared};
 use axum::{Extension, extract::ConnectInfo};
 use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 use sha2::{Digest, Sha256};
@@ -56,7 +56,12 @@ async fn serve(relays: &Relays, incoming: Incoming, route: RouteId, served: Serv
     // private one, derived from its tunnel key, so one cannot spend
     // another's.
     let peer = SocketAddr::new(address_for(&accepted.remote), 0);
-    let service = TowerToHyperService::new(router.layer(Extension(ConnectInfo(Peer(peer)))));
+    // The marker tells a prompt's origin it came through the relay.
+    let service = TowerToHyperService::new(
+        router
+            .layer(Extension(ConnectInfo(Peer(peer))))
+            .layer(Extension(Relayed)),
+    );
     let tls = tokio::time::timeout(
         HANDSHAKE,
         tokio_rustls::TlsAcceptor::from(tls).accept(accepted.io),

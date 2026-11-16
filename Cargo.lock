@@ -11130,6 +11130,7 @@ dependencies = [
  "sheprd-i18n",
  "sheprd-mods",
  "sheprd-orchestrator",
+ "sheprd-relay",
  "sheprd-remote",
  "sheprd-remote-control",
  "sheprd-session",
@@ -11314,7 +11315,28 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "ureq",
  "url",
+]
+
+[[package]]
+name = "sheprd-relay-agent"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "getrandom 0.4.3",
+ "p256 0.14.0",
+ "quinn",
+ "serde",
+ "serde_json",
+ "sheprd-relay",
+ "sheprd-tunnel",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

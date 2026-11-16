@@ -1071,8 +1071,9 @@ by the next error too. The app does not change permissions automatically.
 Existing native theme selections remain overrides. Choose **Follow Herdr** to
 use the shared theme, all 18 upstream palettes, custom colors, and automatic
 light/dark selection. Selecting a shared theme disables upstream auto-switching,
-as in the TUI. Status indicators always use the shared status colors,
-independent of a native terminal theme override, drawn with the set picked on
+as in the TUI. Status indicators use the shared status colors; when Herdr's
+effective theme is `terminal`, they use the app theme's colors instead. They
+are drawn with the set picked on
 **Settings > Appearance > Indicators** and saved as `status_icons` in
 `config-gpui.local.toml`. This app draws only its own sets and ignores Herdr's
 `ui.status_indicators`, which the TUI keeps for itself; unset means **Dots**.
@@ -3693,11 +3694,18 @@ installed: `claude`, `codex` and `pi` (which `sheprd-acp` drives without an
 ACP adapter), `copilot --acp`, `gemini --acp`, or `opencode acp`. The program can
 also be started by hand in any pane: `sheprd-acp claude`.
 
-**One click.** Each tab strip also offers a button per installed agent that
-starts its chat in a new tab of that group; the chat's tab looks like any
-other, and **+** still opens a terminal tab. Each button takes the shape
-the tab layout gives **+**. `[chat] launcher` places the buttons: `plus`
-(the default) deals them out from under **+** while the pointer is over it,
+**One click.** Each tab strip also offers an **Agent** button right after
+**+** that starts a chat in a new tab of that group, with the agent last
+started (else the first installed), or, when that agent's plan is spent or
+close to its limit, the installed agent with the most room, as the tooltip
+and composer then say (see [Choosing the agent](../../docs/rich-chat.md#choosing-the-agent)); the chat's tab looks like any other, and
+**+** still opens a terminal tab. Until its first prompt, the chat's composer
+offers the other installed agents in its own button, first among the
+settings; picking one restarts the chat with that agent, and the launcher
+starts the next chat with it too. Chats on an SSH host keep the agent they
+start with, since the host's `sheprd-acp` may be older. The button takes the
+shape the tab layout gives **+**. `[chat] launcher` places it, or a button
+per installed agent instead: `agent` is the default, `plus` deals them out from under **+** while the pointer is over it,
 to the right, or to the left when the window has no room there, `beside` keeps them right after **+**, `leading` puts them before
 the tabs, `trailing` at the strip's right end, and `button` shows one named
 button for the agent last started, the others sliding out beside it; `off`

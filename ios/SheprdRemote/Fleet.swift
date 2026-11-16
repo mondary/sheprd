@@ -102,8 +102,26 @@ final class Fleet {
     /// Each running proxy's origin, raced after the computer's own
     /// addresses, so a direct path wins when there is one.
     @ObservationIgnored private var relayOrigins: [String: String] = [:]
+    /// The relays typed in Settings, dialed for every computer after the
+    /// ones it named. Relays another computer named are not: that would
+    /// show this computer's route to a relay the user never chose for it. A change restarts the running proxies, which open
+    /// their sessions with the list they started with.
+    @ObservationIgnored var savedRelays: [RelayEndpoint] = [] {
+        didSet {
+            guard savedRelays != oldValue else { return }
+            for device in Array(proxies.keys) {
+                stopRelay(device)
+                if let computer = machines.first(where: { $0.id == device })?.computer { startRelay(computer) }
+            }
+        }
+    }
     /// Computers whose relay keys are being checked or sent.
     @ObservationIgnored private var enrolling: Set<String> = []
+    /// When each computer was last asked about its relays, so one that
+    /// starts listening on a relay while this phone stays connected, such
+    /// as one Sheprd on another computer shared, is learned within minutes.
+    @ObservationIgnored private var relayAsked: [String: Date] = [:]
+    private static let relayRecheck: TimeInterval = 600
     /// A computer's relay record changed, or it stopped listening on
     /// relays (nil): the app keeps it with the computer.
     var onRelay: ((String, RelayRecord?) -> Void)?
@@ -183,6 +201,8 @@ final class Fleet {
     }
 
     func networkChanged() {
+        // The phone's round trips to relays were for the old network.
+        Task { await RelayProbes.shared.forget() }
         for link in links.values { Task { await link.networkChanged() } }
     }
 
@@ -615,6 +635,14 @@ final class Fleet {
     // MARK: Relays
 
     /// The addresses a computer's link races: its own, then its relay's.
+    /// Whether the computer's link is online through its relay proxy.
+    func throughRelay(_ device: String) -> Bool {
+        guard let relay = relayOrigins[device],
+              case let .online(origin) = machines.first(where: { $0.id == device })?.status
+        else { return false }
+        return origin == relay
+    }
+
     private func origins(_ computer: Computer) -> [String] {
         computer.origins + (relayOrigins[computer.device].map { [$0] } ?? [])
     }
@@ -622,8 +650,9 @@ final class Fleet {
     /// Starts the computer's relay proxy, when it has relays, and adds its
     /// origin to the running link once it listens.
     private func startRelay(_ computer: Computer) {
+        let saved = savedRelays
         guard let relay = computer.relay, proxies[computer.device] == nil,
-              let proxy = try? RelayProxy(open: { try await relay.open() })
+              let proxy = try? RelayProxy(open: { try await relay.open(saved: saved) })
         else { return }
         let device = computer.device
         proxies[device] = proxy
@@ -651,6 +680,7 @@ final class Fleet {
     private func enrollRelay(_ device: String) {
         guard !enrolling.contains(device) else { return }
         enrolling.insert(device)
+        relayAsked[device] = .now
         let known = machines.first { $0.id == device }?.computer.relay
         Task {
             defer { enrolling.remove(device) }
@@ -664,7 +694,12 @@ final class Fleet {
                 if known != nil { onRelay?(device, nil) }
                 return
             }
-            if let known, known.matches(info) { return }
+            if let known, known.matches(info) {
+                // Same keys; only the computer's nearest relays, or what its
+                // owner calls them, may differ.
+                if let refreshed = known.refreshed(with: info) { onRelay?(device, refreshed) }
+                return
+            }
             guard let record = RelayRecord.make(from: info), let keys = record.enrollment else { return }
             do {
                 try await call(device) { client, token in try await client.enrollRelay(keys, bearer: token) }
@@ -711,6 +746,10 @@ final class Fleet {
             unreported[device, default: UnreportedFailures()].add(line)
         case let .event(.home(home)):
             if let tags = home.tags { onTags?(tags, machines[index].computer) }
+            if case let .online(origin) = machines[index].status, origin != relayOrigins[device],
+               relayAsked[device].map({ Date.now.timeIntervalSince($0) >= Self.relayRecheck }) ?? true {
+                enrollRelay(device)
+            }
             onShortcutsReported?(home.shortcutsMs, device)
             // The computer's load moves every few seconds; only the header
             // shows it, so the cache, widgets, and Spotlight wait for a

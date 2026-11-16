@@ -103,7 +103,10 @@ impl Plan {
             args.push("--github-cli".into());
         }
         for relay in &config.relays {
-            args.extend(["--relay".into(), relay.into()]);
+            args.extend(["--relay".into(), relay.endpoint.as_str().into()]);
+            for (option, value) in relay.label.args() {
+                args.extend([option.into(), value.into()]);
+            }
         }
         if let Some(socket) = &self.herdr_socket {
             args.extend(["--herdr-socket".into(), socket.clone().into()]);

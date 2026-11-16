@@ -445,8 +445,15 @@ impl Auth {
     }
 
     /// Lets nearby offers say how to claim through this computer's relays.
-    pub(crate) fn set_relay_offer(&mut self, offer: crate::relay::Info) {
-        self.relay_offer = Some(offer);
+    /// Nearby offers name no relays while this computer listens on none.
+    pub(crate) fn set_relay_offer(&mut self, offer: Option<crate::relay::Info>) {
+        self.relay_offer = offer;
+    }
+
+    /// What nearby offers say about the relays now.
+    #[cfg(test)]
+    pub(crate) fn relay_offer(&self) -> Option<&crate::relay::Info> {
+        self.relay_offer.as_ref()
     }
 
     /// The token last sealed to a nearby phone, once, for the relays to

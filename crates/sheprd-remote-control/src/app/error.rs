@@ -40,6 +40,12 @@ pub enum Error {
         #[source]
         source: sheprd_relay::endpoint::Error,
     },
+    #[error("remote.relays gives {relay} a label it cannot use: {source}")]
+    RelayLabel {
+        relay: String,
+        #[source]
+        source: crate::relay_label::Error,
+    },
     #[error("{program} failed ({status}): {stderr}")]
     Service {
         program: &'static str,

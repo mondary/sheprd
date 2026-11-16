@@ -1,8 +1,9 @@
 //! A relay whose name resolves to several addresses is reached at the
 //! first that answers.
 
+#![allow(clippy::unwrap_used)]
+
 use super::*;
-use crate::relay::listen::first_reachable;
 use std::sync::Mutex;
 
 const ATTEMPT: Duration = Duration::from_millis(50);

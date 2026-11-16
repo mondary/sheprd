@@ -12,7 +12,7 @@ mod notifier;
 mod options;
 
 pub use crate::push::Privacy;
-pub use options::{Certificate, Invocation, Options, ParseError, USAGE, parse};
+pub use options::{Certificate, Invocation, Options, ParseError, Relay, USAGE, parse};
 
 use crate::{
     Result,
@@ -64,7 +64,9 @@ pub(crate) fn registrations_for_tests(
 pub async fn run(options: Options) -> Result<()> {
     std::fs::create_dir_all(&options.state_dir)?;
     let bind = options.bind;
-    let relayed = !options.relays.is_empty();
+    // Relays may be shared with this computer while it runs, so loopback,
+    // where relay sessions are served, is always certified.
+    let relayed = true;
     let (authority, resolver, names) = match &options.certificate {
         Certificate::Own => {
             let names = Names::current().bound_to(bind);
@@ -106,13 +108,15 @@ pub async fn run(options: Options) -> Result<()> {
     )?;
     let (pull_requests, _) = watch::channel(Arc::new(Default::default()));
     let load = crate::load::start();
-    let relay = if options.relays.is_empty() {
-        None
-    } else {
-        Some(Arc::new(crate::relay::Relays::load(
-            &options.state_dir,
-            options.relays.clone(),
-        )?))
+    // Kept even with no relay set, for ones another computer shares later.
+    // Only a computer told to listen on relays fails without its keys.
+    let relay = match crate::relay::Relays::load(&options.state_dir, options.relays.clone()) {
+        Ok(relay) => Some(Arc::new(relay)),
+        Err(error) if options.relays.is_empty() => {
+            tracing::warn!(%error, "Could not load the relay keys; relays shared later are ignored");
+            None
+        }
+        Err(error) => return Err(error.into()),
     };
     let state = Arc::new(State {
         apns,
@@ -183,8 +187,6 @@ pub async fn run(options: Options) -> Result<()> {
     }
     let router = web::router(state.clone());
     if let Some(relay) = &state.relay {
-        // Nearby offers say how to claim through the relays too.
-        state.auth().set_relay_offer(relay.info());
         // The phone reaches a relay session at `https://127.0.0.1:PORT`
         // through its loopback proxy: the certificate for that address,
         // which `certified` has issued whatever the bind address.

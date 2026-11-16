@@ -3,7 +3,7 @@
 //! blocking pool.
 
 use super::{
-    ApiError, Device, Peer, Shared,
+    ApiError, Device, Peer, Shared, TypedFrom,
     fragments::folders,
     render::{now_ms, urlencode},
 };
@@ -244,14 +244,19 @@ pub(super) async fn origins(State(state): State<Shared>, _device: Device) -> Jso
 pub(super) async fn command(
     State(state): State<Shared>,
     _device: Device,
+    TypedFrom(origin): TypedFrom,
     Path(pane): Path<String>,
     Json(command): Json<Command>,
 ) -> Result<Json<Value>, ApiError> {
-    // A phone names only pictures it uploaded, never a path here.
+    // A phone names only pictures it uploaded, never a path here, and the
+    // connection says where it typed, whatever the phone claims.
     let command = match command {
-        Command::Prompt { text, attachments } => Command::Prompt {
+        Command::Prompt {
+            text, attachments, ..
+        } => Command::Prompt {
             text,
             attachments: state.uploads.resolve(&attachments, now_ms())?,
+            origin: Some(origin),
         },
         command => command,
     };

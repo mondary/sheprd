@@ -180,6 +180,14 @@ phone still signs in with its device key and a bearer token. The relay's
 QUIC pin is read from its `/v1/info` over HTTPS. `sheprd remote status`
 shows each relay's state.
 
+Sheprd on another computer shares its relays with this one by running
+`sheprd-remote-control relays --offer` over SSH (`control::relays`): each
+computer's list replaces what it shared before, is kept in
+`STATE_DIR/relay/shared.json`, and is listened on at once beside this
+computer's own `[remote] relays`, which it never changes. When the daemon
+does not answer, the command writes the file itself; the daemon builds each
+change on the file and reads it again every minute, so no offer is lost.
+
 Bluetooth pairing works from another network: the sealed nearby offer
 also carries `relay` (the same fields as `GET /api/relay`), revealing it
 opens a one-dial pairing key on each relay derived from the offer's

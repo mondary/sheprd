@@ -7,6 +7,7 @@ mod attach;
 mod claude;
 mod cli;
 mod codex;
+mod context;
 mod error;
 mod files;
 mod harness;

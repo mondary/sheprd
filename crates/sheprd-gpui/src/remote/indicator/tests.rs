@@ -110,3 +110,5 @@ fn no_phone_shows_while_remote_control_is_off(cx: &mut TestAppContext) {
     draw(cx);
     assert!(cx.debug_bounds("titlebar-remote").is_none());
 }
+
+mod firewall;

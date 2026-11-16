@@ -3,15 +3,17 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{Attachment, Change, MAX_ATTACHMENTS, OptionValue, PermissionId, Transcript};
+use crate::{
+    Agent, Attachment, Change, MAX_ATTACHMENTS, OptionValue, Origin, PermissionId, Transcript,
+};
 
 /// The attach protocol version; a client and program must agree exactly.
 pub const VERSION: u32 = 1;
 
 /// Additions to [`VERSION`] a client declares it reads in its greeting:
-/// 1 is `Change::Activity`. A program sends a client of an earlier revision
-/// only what that client can decode.
-pub const REVISION: u32 = 1;
+/// 1 is `Change::Activity`, 2 is `Change::Harnesses`. A program sends a
+/// client of an earlier revision only what that client can decode.
+pub const REVISION: u32 = 2;
 
 /// The longest prompt a client may send, in bytes.
 pub const MAX_PROMPT_SIZE: usize = 256 * 1024;
@@ -91,6 +93,9 @@ pub enum Command {
         /// Files sent with it, at most [`MAX_ATTACHMENTS`].
         #[serde(default)]
         attachments: Vec<Attachment>,
+        /// Where it was typed; none from clients that predate origins.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Origin>,
     },
     /// Ends the running turn, declines its pending permission requests, and
     /// drops queued prompts.
@@ -120,6 +125,11 @@ pub enum Command {
     /// stoppable, leaving the turn and everything else running.
     StopActivity {
         call_id: String,
+    },
+    /// Runs another agent in the chat, in place of the one it runs, while
+    /// the transcript's `harnesses` offers it.
+    SetAgent {
+        agent: Agent,
     },
 }
 
@@ -183,6 +193,10 @@ pub enum Rejection {
     UnknownFile,
     #[error("that work has already ended or cannot be stopped")]
     UnknownActivity,
+    #[error("the chat's agent can no longer change")]
+    AgentFixed,
+    #[error("that agent is not installed where the chat runs")]
+    AgentMissing,
     /// A command this program's version does not know, from a newer client.
     #[error("this chat program is older than Sheprd; start a new chat to use that")]
     Unsupported,

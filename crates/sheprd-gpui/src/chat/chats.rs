@@ -100,6 +100,8 @@ pub(crate) fn connect(
 /// The menu open over a chat's header.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Menu {
+    /// The agents the chat may still switch to.
+    Agent,
     /// The agent's older list of session modes.
     Modes,
     /// The choices of one setting, by id.
@@ -587,6 +589,8 @@ pub(crate) struct Chats {
     panes: Vec<ChatPane>,
     /// The `herdr-acp` new chats run.
     pub(crate) program: super::Program,
+    /// Whether that program lets a new chat switch agents.
+    pub(crate) program_choice: super::start::AgentChoice,
     /// Exact pane/process/host targets the user turned back to their terminal.
     /// Two panes may legitimately observe the same session endpoint.
     raw: HashSet<Target>,

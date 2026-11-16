@@ -7,6 +7,7 @@ pub mod config;
 pub mod edited;
 pub mod enroll;
 mod error;
+pub mod firewall;
 pub mod pairing;
 pub mod qr;
 pub mod service;

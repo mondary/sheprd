@@ -218,5 +218,6 @@ fn a_failed_change_waits_for_retry(cx: &mut TestAppContext) {
 }
 
 mod changes;
+mod firewall;
 mod indicators;
 mod restart;

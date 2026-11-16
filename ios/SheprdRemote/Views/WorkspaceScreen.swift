@@ -133,6 +133,7 @@ struct WorkspaceScreen: View {
         } message: {
             Text(problem ?? "")
         }
+        .selectsAllOnEdit(while: renaming)
         .alert("Rename Workspace", isPresented: $renaming) {
             TextField("Name", text: $newName)
                 .textInputAutocapitalization(.never)

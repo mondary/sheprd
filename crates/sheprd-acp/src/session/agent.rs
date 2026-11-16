@@ -216,9 +216,21 @@ impl<R: FnMut(Update)> Session<R> {
         if self.acp_session.as_ref() != Some(&notification.session_id) {
             return;
         }
-        let changes = self
-            .projector
-            .update(&self.transcript, notification.update, now_ms());
+        let mut update = notification.update;
+        // A conversation the agent replays holds Sheprd's notes ahead of
+        // the person's words: they are hidden, as when they were sent, and
+        // say what the agent was already told.
+        if let wire::SessionUpdate::UserMessageChunk(chunk) = &mut update
+            && let wire::ContentBlock::Text(content) = &mut chunk.content
+            && let Some((note, rest)) = crate::context::split(&content.text)
+        {
+            self.context.heard(note);
+            if rest.is_empty() {
+                return;
+            }
+            content.text = rest.to_owned();
+        }
+        let changes = self.projector.update(&self.transcript, update, now_ms());
         self.emit_all(changes);
     }
 

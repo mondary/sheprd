@@ -225,6 +225,7 @@ struct TerminalScreen: View {
                 .accessibilityLabel("Sheprd actions")
             }
         }
+        .selectsAllOnEdit(while: renaming)
         .alert("Rename Tab", isPresented: $renaming) {
             TextField("Name", text: $newName)
                 .textInputAutocapitalization(.never)

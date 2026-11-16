@@ -156,6 +156,15 @@ Messages render Markdown and TeX: headings, lists, links, tables, Mermaid, code 
 
 When you scroll up, the conversation stays put and a round button appears, saying **New output below** once more arrives.
 
+## What the agent is told
+
+Besides your words, a chat tells the agent two things it cannot see, in a note ahead of your message that the chat itself does not show:
+
+- **Your system prompt.** Instructions for every chat go in `~/.config/herdr/chat-system-prompt.md` (under `XDG_CONFIG_HOME` when set, `%APPDATA%` on Windows), on the machine the agent runs on. The first message of each chat sends it, once: a chat restored after a restart does not send it again unless you edited the file. The file may hold up to 16 KiB; an empty or longer file is skipped.
+- **Where you are typing.** The desktop app on the agent's machine or on another computer over SSH, the terminal pane's own chat view, or Sheprd's iPhone and iPad app or web app, along with how the phone reached the computer: the local network, Tailscale, or Sheprd's relay. The note goes again only when you switch devices, so moving from your desk to your phone and back mid-chat tells the agent each time, while a phone changing networks does not. Opening the same chat from the desktop app on another computer over SSH also counts, since paths are no longer yours to open.
+
+Where you cannot open files on the agent's machine, as on a phone, the agent is asked to put pictures in the chat instead of giving a path: it saves a screenshot or a mockup as an image and links it, which attaches the picture to the message. HTML mockups are rendered to screenshots first.
+
 ## Existing CLI sessions
 
 With `render_existing = true`, Sheprd shows running Codex and Claude CLI conversations as a chat above their original terminal input, without restarting or replacing the agent. Typing, approvals, slash commands, and image paste stay with the CLI. Drag the divider above **Agent input · same session** to size the input, or choose **Compact input**.

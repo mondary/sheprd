@@ -126,6 +126,7 @@ mod processes;
 mod progress;
 mod pull_request;
 mod px0;
+mod relay_sharing;
 mod release_notes;
 mod remote;
 mod remote_browser;

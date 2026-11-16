@@ -8,6 +8,7 @@ use sheprd_remote_control::{
     app::{enroll, shortcuts, tags},
     control::DeviceId,
     server::{self, Invocation},
+    shared_relays,
 };
 use std::{io::Read, path::PathBuf, process::ExitCode};
 
@@ -22,6 +23,12 @@ fn main() -> ExitCode {
             return host(state_dir, |state_dir| {
                 enroll::revoke(state_dir, DeviceId(device))?;
                 Ok(())
+            });
+        }
+        Ok(Invocation::Relays { state_dir, offer }) => {
+            return host(state_dir, |state_dir| {
+                let offer = read_offer(offer, MAX_INPUT)?;
+                print_json(&relays(state_dir, offer)?)
             });
         }
         Ok(Invocation::Shortcuts { state_dir, offer }) => {
@@ -100,6 +107,19 @@ fn run_enroll(state_dir: &std::path::Path) -> sheprd_remote_control::Result<()> 
         serde_json::to_string(&enrolled).map_err(std::io::Error::from)?
     );
     Ok(())
+}
+
+/// `relays`: shares `offer` with the daemon, or with no offer reads what it
+/// listens on; either way, its own relays and the shared ones.
+fn relays(
+    state_dir: &std::path::Path,
+    offer: Option<sheprd_remote_control::control::relays::Offer>,
+) -> sheprd_remote_control::Result<serde_json::Value> {
+    let relays = match offer {
+        Some(offer) => shared_relays::share(state_dir, offer)?,
+        None => shared_relays::listened(state_dir)?,
+    };
+    Ok(serde_json::json!({ "relays": relays }))
 }
 
 /// The offer on standard input, at most `limit` bytes, when `offer` asks

@@ -917,7 +917,12 @@ impl SheprdWindow {
                 path: path.to_string_lossy().into_owned(),
             })
             .collect();
-        match pane.send(Command::Prompt { text, attachments }) {
+        let origin = Some(pane.target.origin());
+        match pane.send(Command::Prompt {
+            attachments,
+            origin,
+            text,
+        }) {
             Ok(()) => {
                 pane.error = None;
                 pane.attachments.clear();

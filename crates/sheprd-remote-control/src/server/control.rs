@@ -133,10 +133,12 @@ pub(crate) fn answer(state: &State, stop: &watch::Sender<bool>, request: Request
             .map(Response::NearbyStarted),
         Request::NearbyReveal { session, nonce } => {
             let origins = state.origins();
-            let revealed = state
-                .auth()
-                .nearby_reveal(&session, &nonce, &state.fingerprint, &origins, now)
-                .map(Response::NearbyRevealed);
+            let revealed = {
+                let mut auth = state.auth();
+                crate::relay::refresh_offer(state.relay.as_deref(), &mut auth);
+                auth.nearby_reveal(&session, &nonce, &state.fingerprint, &origins, now)
+                    .map(Response::NearbyRevealed)
+            };
             crate::relay::open_pairing(state);
             revealed
         }
@@ -217,6 +219,21 @@ pub(crate) fn answer(state: &State, stop: &watch::Sender<bool>, request: Request
             };
             return match state.tags.offer(offer, now) {
                 Ok(tags) => Response::Tags(tags),
+                Err(error) => Response::Error {
+                    code: ErrorCode::Unsaved,
+                    message: error.to_string(),
+                },
+            };
+        }
+        Request::ShareRelays(offer) => {
+            let Some(relay) = &state.relay else {
+                return Response::Error {
+                    code: ErrorCode::Unsupported,
+                    message: "this computer cannot listen on relays".into(),
+                };
+            };
+            return match relay.share(offer) {
+                Ok(relays) => Response::Relays { relays },
                 Err(error) => Response::Error {
                     code: ErrorCode::Unsaved,
                     message: error.to_string(),
