@@ -32,9 +32,8 @@ public struct CollapsedComputers: Hashable, Sendable {
         devices.remove(device)
     }
 
-    /// Drops the keys under `prefix` whose rest is not in `kept`, so folds
-    /// of workspaces a computer closed, or of a computer forgotten, do not
-    /// stay saved. Keys outside `prefix` stay as they were.
+    /// Drops the keys under `prefix` whose rest is not in `kept`, such as a
+    /// forgotten computer's folds. Keys outside `prefix` stay as they were.
     public mutating func prune(prefix: String, keeping kept: Set<String>) {
         devices = devices.filter { key in
             guard key.hasPrefix(prefix) else { return true }

@@ -217,12 +217,12 @@ final class CollapsedStore {
         home = CollapsedComputers(UserDefaults.standard.stringArray(forKey: Self.homeKey) ?? [])
     }
 
-    /// Keeps Home's folded workspace sections of `device` to `workspaces`,
-    /// all it has open, agents or not; none for a forgotten computer.
-    /// Saves only when something went.
-    func keepHome(device: String, workspaces: Set<String>) {
+    /// Drops Home's folded workspace sections of a forgotten computer.
+    /// A live home cannot prune them: its list leaves out the workspaces of
+    /// a Herdr source that is down for a moment, so folds would reopen.
+    func forgetHome(device: String) {
         var kept = home
-        kept.prune(prefix: "\(AgentSort.workspace.rawValue)/\(device)/", keeping: workspaces)
+        kept.prune(prefix: "\(AgentSort.workspace.rawValue)/\(device)/", keeping: [])
         if kept != home { home = kept }
     }
 }

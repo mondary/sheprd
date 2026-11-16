@@ -292,7 +292,6 @@ final class AppModel {
             }
         }
         fleet.onShortcutsReported = { [shortcuts] in shortcuts.reported($0, by: $1) }
-        fleet.onWorkspaces = { [collapsed] in collapsed.keepHome(device: $1, workspaces: $0) }
         fleet.onShortcuts = { [shortcuts] in shortcuts.received($0, offered: $1, from: $2) }
         fleet.onShortcutsFetchFailed = { [shortcuts] in shortcuts.fetchFailed($0) }
         fleet.onOffline = { [shortcuts] in shortcuts.offline($0) }
@@ -429,7 +428,7 @@ final class AppModel {
         try? NotifyKey.forget(computer.fingerprint)
         hostLinks.forget(computer)
         collapsed.computers.forget(computer.device)
-        collapsed.keepHome(device: computer.device, workspaces: [])
+        collapsed.forgetHome(device: computer.device)
         shortcuts.offline(computer.device)
         Task { await sessions.forget(computer) }
     }
