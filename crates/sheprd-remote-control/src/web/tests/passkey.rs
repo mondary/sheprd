@@ -144,6 +144,14 @@ async fn a_browser_on_the_web_name_pairs_and_signs_in_with_a_passkey() {
         },
     );
     let device = state.auth().devices().list(|_| false)[0].id.0.clone();
+    // Paired there, it signs in there alone: its key never opens a session
+    // on the network without the passkey.
+    let (status, _, _) = send(
+        &state,
+        post("/api/session/challenge", json!({"device": device})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // The challenge names the passkey; answering without it fails.
     let (status, _, challenge) = send_web(

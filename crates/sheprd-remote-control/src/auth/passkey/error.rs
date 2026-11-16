@@ -17,10 +17,10 @@ pub enum Error {
     Malformed,
     #[error("the passkey made no credential")]
     NoCredential,
-    #[error("this device has no passkey for this address; pair it here again")]
-    NotRegistered,
     #[error("the passkey was not used by a person")]
     NotPresent,
+    #[error("this device has no passkey for this address; pair it here again")]
+    NotRegistered,
     #[error("the passkey did not verify who is using it")]
     NotVerified,
     #[error("this address needs a passkey")]
@@ -29,6 +29,8 @@ pub enum Error {
     Signature,
     #[error("the passkey's data is too long")]
     TooLarge,
+    #[error("this device signs in at its web address only")]
+    WebOnly,
     #[error("the passkey answered another request")]
     WrongChallenge,
     /// The authenticator's counter did not move forward: two copies of one

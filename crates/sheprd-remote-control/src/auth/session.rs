@@ -93,7 +93,13 @@ impl Sessions {
         devices: &Devices,
     ) -> Result<Challenge> {
         let record = devices.get(device).ok_or(Error::UnknownDevice)?;
+        // A device paired at a web name with a passkey signs in there
+        // alone: its key, which a handoff there may replace, never opens a
+        // session without the passkey.
         let passkey = match &scope {
+            Scope::Network if record.passkey.is_some() => {
+                return Err(passkey::Error::WebOnly.into());
+            }
             Scope::Network => None,
             Scope::Web(host) => Some(
                 record
