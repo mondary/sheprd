@@ -286,6 +286,7 @@ impl SheprdWindow {
             }
             changed = Redraw::Window;
         }
+        self.recent_activation_started();
         // Held input precedes any deferred navigation.
         self.flush_pending_input(cx);
         if self.navigation_ready() {
@@ -293,7 +294,8 @@ impl SheprdWindow {
             if let Some(id) = self.pending_toast {
                 self.navigate_toast(id, cx);
             } else if let Some(target) = self.pending_navigation.take() {
-                self.dispatch_navigation(target.as_deref(), cx);
+                let queued = self.dispatch_navigation(target.as_deref(), cx);
+                self.recent_navigation_dispatched(&target, queued);
             }
         } else if self
             .activation_deadline
@@ -318,6 +320,11 @@ impl SheprdWindow {
             }
             self.local_error = Some(error);
             changed = Redraw::Window;
+        }
+        // Every snapshot, activation, or endpoint change redraws the window,
+        // so the order only needs a look then, not every frame.
+        if changed == Redraw::Window {
+            self.observe_recent_panes(cx);
         }
         self.sync_server_keymap(cx);
         match changed {

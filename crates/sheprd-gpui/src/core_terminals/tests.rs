@@ -35,6 +35,7 @@ mod phone;
 mod processes;
 mod programs;
 mod quote;
+mod recent;
 mod refresh;
 mod remote_workspaces;
 mod requests;

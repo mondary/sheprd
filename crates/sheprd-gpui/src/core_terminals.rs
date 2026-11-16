@@ -36,6 +36,7 @@ pub(crate) mod mutes;
 mod phone;
 mod processes;
 mod programs;
+pub(crate) mod recent;
 mod recovery;
 mod requests;
 mod screen;

@@ -177,6 +177,10 @@ pub(crate) struct CoreTerminalView {
 }
 
 impl CoreTerminalView {
+    pub(super) fn composing(&self) -> bool {
+        !self.marked.is_empty()
+    }
+
     /// The terminal it shows.
     pub(crate) fn terminal(&self) -> &TerminalId {
         &self.id
