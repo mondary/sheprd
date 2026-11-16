@@ -12,6 +12,7 @@ mod server;
 #[cfg(feature = "signed-directory")]
 mod signed_directory;
 mod socket;
+mod web_label;
 mod wire;
 
 use crate::{socket::Hello, wire::Key};

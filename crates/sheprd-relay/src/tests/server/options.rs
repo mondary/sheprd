@@ -77,6 +77,7 @@ fn every_setting_is_read_from_its_variable() {
                 "auto-ban" => "off",
                 "ban" => "203.0.113.0/24, 2001:db8::/32",
                 "client-ip-header" => "do-connecting-ip",
+                "front-upstream" => "caddy:8443",
                 _ => "operator",
             },
         };

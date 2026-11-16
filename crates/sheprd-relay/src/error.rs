@@ -15,6 +15,9 @@ pub enum Error {
     Directory(#[from] crate::directory::Error),
     #[error(transparent)]
     Endpoint(#[from] crate::endpoint::Error),
+    #[cfg(feature = "server")]
+    #[error(transparent)]
+    Front(#[from] crate::front::Error),
     #[error("{name} is not valid: {value:?}")]
     Invalid { name: &'static str, value: OsString },
     #[cfg(feature = "server")]

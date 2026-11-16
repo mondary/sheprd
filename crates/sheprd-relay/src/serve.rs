@@ -11,6 +11,7 @@ use crate::{
         lockout::{Lockout, Verdict},
     },
     endpoint::QuicInfo,
+    front,
     guard::{Cidr, parse_list},
     hub::{Access, Hub},
     quic::{self, tls::Identity},
@@ -295,6 +296,9 @@ pub async fn serve(options: Options) -> Result<()> {
         })
         .transpose()?;
     let listener = bind(options.listen).await?;
+    if let Some(address) = options.front {
+        start_front(address, &options, &hub).await?;
+    }
     if let Some(address) = options.metrics {
         let metrics = bind(address).await?;
         let app = metrics_app(Arc::clone(&hub), metrics_token);
@@ -345,6 +349,36 @@ pub async fn serve(options: Options) -> Result<()> {
         endpoint.close(quinn::VarInt::from_u32(crate::wire::code::SHUTDOWN), b"");
         endpoint.wait_idle().await;
     }
+    Ok(())
+}
+
+/// Starts the TCP front on `address`, routing by the relay's public host.
+async fn start_front(address: SocketAddr, options: &Options, hub: &Arc<Hub>) -> Result<()> {
+    let relay_host = options
+        .public_host
+        .as_deref()
+        .and_then(front::relay_host)
+        .ok_or(front::Error::NoHost)?;
+    if options.front_upstream.is_none() {
+        tracing::warn!("the front has no upstream: the relay's own name is refused on it");
+    }
+    let config = front::Config {
+        relay_host: Arc::from(relay_host),
+        upstream: options.front_upstream.as_deref().map(Arc::from),
+    };
+    let limits = &options.limits;
+    let listener = Capped::new(
+        bind(address).await?,
+        limits.max_connections.saturating_add(HTTP_HEADROOM),
+        Some(
+            limits
+                .max_connections_per_ip
+                .saturating_add(HTTP_HEADROOM_PER_CALLER),
+        ),
+        limits.idle_timeout,
+    );
+    tokio::spawn(front::run(listener, Arc::clone(hub), config));
+    tracing::info!(%address, "serving the TCP front");
     Ok(())
 }
 

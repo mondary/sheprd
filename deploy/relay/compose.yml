@@ -1,6 +1,9 @@
 # One relay. QUIC, the main transport, reaches it directly on UDP 443 with
-# its own pinned certificate. Caddy serves TCP 443 with a Let's Encrypt
-# certificate: /v1/info, the dashboard, and the WebSocket fallback.
+# its own pinned certificate. TCP 443 reaches the relay's front, which reads
+# each connection's server name without ending TLS: the relay's own name
+# goes on to Caddy, which has a Let's Encrypt certificate and serves
+# /v1/info, the dashboard, and the WebSocket fallback; computers' web names
+# (docs/relay-web-plan.md) go to their listeners.
 #
 #   RELAY_DOMAIN=relay.example.org docker compose up -d
 #
@@ -30,8 +33,13 @@ services:
       # published in Sheprd's signed relay list. The directory must be
       # writable by the image's user, 65532 (start.sh makes it so).
       RELAY_QUIC_IDENTITY_DIR: /quic
+      # The TCP front, published on 443. The relay's own name goes on to
+      # Caddy, with a PROXY header naming the caller.
+      RELAY_FRONT: 0.0.0.0:8444
+      RELAY_FRONT_UPSTREAM: caddy:443
     ports:
       - "443:8443/udp"
+      - "443:8444/tcp"
       # /metrics stays on the host. Scrape it locally, through an SSH
       # tunnel, or over a private network with RELAY_METRICS_TOKEN set.
       - "127.0.0.1:9090:9090"
@@ -53,10 +61,10 @@ services:
     image: caddy:2-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
     restart: unless-stopped
     depends_on: [relay]
+    # Only port 80 is published, for HTTP-01 and redirects. HTTPS reaches
+    # Caddy's 443 through the relay's front, never from outside directly.
     ports:
       - "80:80"
-      # TCP only: UDP 443 is the relay's QUIC (the Caddyfile turns HTTP/3 off).
-      - "443:443"
     environment:
       RELAY_DOMAIN: ${RELAY_DOMAIN:?set RELAY_DOMAIN}
     volumes:

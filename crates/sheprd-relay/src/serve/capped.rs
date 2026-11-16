@@ -180,6 +180,11 @@ impl Held {
         }
     }
 
+    /// The address the caller reached, for a PROXY header.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.stream.local_addr()
+    }
+
     /// Something crossed: push the deadline back, once the relay has
     /// answered. Until then the deadline set at accepting stands.
     fn crossed(&mut self) {

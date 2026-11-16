@@ -1,7 +1,18 @@
 {
-	servers {
+	servers :443 {
 		# UDP 443 belongs to the relay's QUIC.
 		protocols h1 h2
+		# HTTPS arrives only through the relay's front (443 is not
+		# published), which starts each connection with a PROXY v2 header
+		# naming the caller. Only the container network is trusted to send
+		# one. Port 80 takes none.
+		listener_wrappers {
+			proxy_protocol {
+				timeout 5s
+				allow 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+			}
+			tls
+		}
 	}
 }
 

@@ -28,6 +28,6 @@ COPY --from=build /sheprd-relay /usr/local/bin/sheprd-relay
 ENV RELAY_LISTEN=0.0.0.0:8080 \
     RELAY_METRICS=0.0.0.0:9090 \
     RELAY_QUIC=0.0.0.0:8443
-EXPOSE 8080 9090 8443/udp
+EXPOSE 8080 8444 9090 8443/udp
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/sheprd-relay"]

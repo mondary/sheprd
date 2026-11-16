@@ -36,6 +36,13 @@ Every option is optional, and each can also be set as a RELAY_* variable
                                  signed relay list (default: a new one each
                                  start)
   --metrics ADDRESS|off          Prometheus /metrics (default 127.0.0.1:9090)
+  --front ADDRESS|off            The TCP front for port 443: routes TLS by server
+                                 name without ending it, so browsers reach
+                                 computers that turned web access on; needs
+                                 --public-host (default off)
+  --front-upstream HOST:PORT     Where the front sends the relay's own name: the
+                                 HTTPS server in front of --listen, which must
+                                 accept PROXY protocol v2 (caddy:8443)
   --public-host HOST[:PORT][/PREFIX]
                                  The name clients reach this relay by, as in
                                  their endpoint (relay.example.org). WebSocket
@@ -125,6 +132,8 @@ pub const SETTINGS: &[(&str, Kind)] = &[
     ("connections-per-minute", Kind::Count),
     ("dashboard-token-file", Kind::File),
     ("dials-per-minute", Kind::Count),
+    ("front", Kind::Address),
+    ("front-upstream", Kind::Text),
     ("idle-timeout", Kind::Duration),
     ("listen", Kind::Address),
     ("listen-token-file", Kind::File),
@@ -175,6 +184,10 @@ pub struct Options {
     pub client_ip_header: Option<String>,
     /// The dashboard's access token; without one, the dashboard is off.
     pub dashboard_token: Option<SecretString>,
+    /// Where the TCP front listens, or `None` when it is off.
+    pub front: Option<SocketAddr>,
+    /// Where the front sends the relay's own name, `HOST:PORT`.
+    pub front_upstream: Option<String>,
     pub limits: Limits,
     pub listen: SocketAddr,
     pub listen_token: Option<SecretString>,
@@ -203,6 +216,8 @@ impl Default for Options {
             behind_proxy: false,
             client_ip_header: None,
             dashboard_token: None,
+            front: None,
+            front_upstream: None,
             limits: Limits::default(),
             listen: SocketAddr::from(([127, 0, 0, 1], 8080)),
             listen_token: None,
@@ -358,6 +373,9 @@ impl Options {
             }
             "connections-per-minute" => limits.connections_per_minute = per_minute()?,
             "dials-per-minute" => limits.dials_per_minute = per_minute()?,
+            "front" if text == "off" => self.front = None,
+            "front" => self.front = Some(text.parse().map_err(|_| invalid())?),
+            "front-upstream" => self.front_upstream = Some(upstream(text).ok_or_else(invalid)?),
             "idle-timeout" => limits.idle_timeout = duration()?,
             "listen" => self.listen = text.parse().map_err(|_| invalid())?,
             "listen-token-file" => {
@@ -417,6 +435,24 @@ pub fn public_host(text: &str) -> Option<String> {
     crate::Endpoint::parse(&format!("https://{text}"))
         .ok()
         .map(|endpoint| endpoint.proof_name())
+}
+
+/// A front upstream, `HOST:PORT`: a name or address and a nonzero port,
+/// resolved when the front connects, so a container name works.
+fn upstream(text: &str) -> Option<String> {
+    let text = text.trim();
+    let (host, port) = text.rsplit_once(':')?;
+    let host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    let named = host
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_'));
+    let valid = !host.is_empty()
+        && (named || host.parse::<std::net::IpAddr>().is_ok())
+        && port.parse::<u16>().is_ok_and(|port| port > 0);
+    valid.then(|| text.to_owned())
 }
 
 /// A secret file's text, trimmed; refuses an empty one.

@@ -67,6 +67,19 @@ labels! {
 }
 
 labels! {
+    /// Where the TCP front sent a connection, or why it did not.
+    Front {
+        Challenge => "challenge",
+        Malformed => "malformed",
+        Refused => "refused",
+        Relay => "relay",
+        Timeout => "timeout",
+        Unreachable => "unreachable",
+        Web => "web",
+    }
+}
+
+labels! {
     /// Why a socket was refused before it opened.
     Refused {
         Banned => "banned",
@@ -140,6 +153,7 @@ pub struct Metrics {
     duration_ms_sum: AtomicU64,
     ended: [AtomicU64; End::ALL.len()],
     frames: [AtomicU64; Direction::ALL.len()],
+    front: [AtomicU64; Front::ALL.len()],
     listeners: AtomicU64,
     listens: [AtomicU64; Listen::ALL.len()],
     bans: [AtomicU64; Offense::ALL.len()],
@@ -163,6 +177,7 @@ impl Default for Metrics {
             duration_ms_sum: AtomicU64::default(),
             ended: Default::default(),
             frames: Default::default(),
+            front: Default::default(),
             listeners: AtomicU64::default(),
             listens: Default::default(),
             bans: Default::default(),
@@ -217,6 +232,11 @@ impl Metrics {
 
     pub fn dial(&self, outcome: Dial) {
         self.dials[outcome.index()].fetch_add(1, Relaxed);
+    }
+
+    /// Where the TCP front sent a connection.
+    pub fn front(&self, outcome: Front) {
+        self.front[outcome.index()].fetch_add(1, Relaxed);
     }
 
     pub fn listen(&self, outcome: Listen) {
@@ -381,6 +401,16 @@ impl Metrics {
             Dial::ALL,
             Dial::label,
             |outcome| load(&self.dials[outcome.index()]),
+        );
+        series(
+            &mut out,
+            "sheprd_relay_front_total",
+            "counter",
+            "TCP front connections by where they went.",
+            "outcome",
+            Front::ALL,
+            Front::label,
+            |outcome| load(&self.front[outcome.index()]),
         );
         series(
             &mut out,

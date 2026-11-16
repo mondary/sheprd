@@ -8,6 +8,8 @@ mod bucket;
 mod capped;
 mod cross_site;
 mod dashboard;
+mod front;
+mod front_hello;
 mod guard;
 mod history;
 mod identity;

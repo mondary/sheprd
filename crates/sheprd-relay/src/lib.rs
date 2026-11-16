@@ -34,6 +34,8 @@
 //! - [`quic`]: the QUIC transport, sessions as streams.
 //! - [`web`]: the WebSocket fallback over HTTPS, for networks without UDP,
 //!   and the dashboard's routes.
+//! - [`front`]: the TCP front on port 443, routing TLS by server name
+//!   without ending it, so browsers reach computers' web access.
 
 //!
 //! Without the `server` feature, only [`directory`], [`endpoint`],
@@ -51,6 +53,8 @@ pub mod dashboard;
 pub mod directory;
 pub mod endpoint;
 mod error;
+#[cfg(feature = "server")]
+pub mod front;
 #[cfg(feature = "server")]
 pub mod guard;
 #[cfg(feature = "server")]
@@ -83,7 +87,7 @@ pub use error::{Error, Result};
 pub use limits::Limits;
 #[cfg(feature = "server")]
 pub use options::{Options, USAGE};
-pub use route::{RouteId, SessionId};
+pub use route::{RouteId, SessionId, WebLabel};
 #[cfg(feature = "server")]
 pub use serve::{app, bind_quic, serve};
 

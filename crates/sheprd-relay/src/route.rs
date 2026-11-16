@@ -64,6 +64,83 @@ impl fmt::Debug for RouteId {
     }
 }
 
+/// How many of a route's bytes its web label carries: 160 bits, as many
+/// as base32 fits in 32 characters.
+const WEB_LABEL_BYTES: usize = 20;
+/// A web label's length in characters.
+pub const WEB_LABEL_LEN: usize = 32;
+/// Base32's lowercase alphabet (RFC 4648), which DNS names can carry.
+const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
+
+/// The first label of a route's web address, `<label>.<relay host>`, where
+/// browsers reach a computer that turned web access on
+/// (`docs/relay-web-plan.md`): the start of its route in lowercase base32,
+/// one DNS label. It names the route, not a secret: the computer's
+/// certificate puts it in Certificate Transparency logs.
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct WebLabel([u8; WEB_LABEL_BYTES]);
+
+impl WebLabel {
+    /// The label browsers reach `route` by.
+    #[must_use]
+    pub fn of(route: &RouteId) -> Self {
+        let mut bytes = [0; WEB_LABEL_BYTES];
+        bytes.copy_from_slice(&route.0[..WEB_LABEL_BYTES]);
+        Self(bytes)
+    }
+
+    /// Reads a label: exactly [`WEB_LABEL_LEN`] lowercase base32
+    /// characters, as a server name carries it once lowercased.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        if text.len() != WEB_LABEL_LEN {
+            return None;
+        }
+        let mut bytes = [0; WEB_LABEL_BYTES];
+        // Each group of eight characters holds five bytes.
+        for (group, out) in text.as_bytes().chunks(8).zip(bytes.chunks_mut(5)) {
+            let mut bits: u64 = 0;
+            for &character in group {
+                let value = BASE32.iter().position(|&known| known == character)?;
+                bits = (bits << 5) | u64::try_from(value).ok()?;
+            }
+            out.copy_from_slice(&bits.to_be_bytes()[3..]);
+        }
+        Some(Self(bytes))
+    }
+
+    /// The route's web address on the relay named `relay_host`.
+    #[must_use]
+    pub fn host(&self, relay_host: &str) -> String {
+        format!("{self}.{relay_host}")
+    }
+}
+
+impl fmt::Display for WebLabel {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut text = [0; WEB_LABEL_LEN];
+        for (group, out) in self.0.chunks(5).zip(text.chunks_mut(8)) {
+            let mut padded = [0; 8];
+            padded[3..].copy_from_slice(group);
+            let bits = u64::from_be_bytes(padded);
+            for (index, character) in out.iter_mut().enumerate() {
+                let shift = 35 - 5 * index;
+                *character = BASE32[usize::try_from((bits >> shift) & 31).unwrap_or(0)];
+            }
+        }
+        // Every byte comes from the ASCII alphabet.
+        formatter.write_str(std::str::from_utf8(&text).map_err(|_| fmt::Error)?)
+    }
+}
+
+/// Labels stay out of logs, as routes do.
+impl fmt::Debug for WebLabel {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = self.to_string();
+        write!(formatter, "WebLabel({}…)", &text[..8])
+    }
+}
+
 /// One dial waiting for its listener, named by 128 random bits that only the
 /// listener learns.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
