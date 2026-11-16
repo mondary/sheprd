@@ -365,6 +365,8 @@ async function createPasskey(token, publicKey) {
   const state = view().querySelector("[data-state]");
   state.textContent = "This address is open to the internet, so this device signs in with a passkey.";
   button.hidden = false;
+  // A cancelled prompt leaves the button for another try while the code
+  // is still good.
   const made = await new Promise((resolve, reject) => {
     button.addEventListener("click", () => {
       navigator.credentials
@@ -379,7 +381,10 @@ async function createPasskey(token, publicKey) {
             timeout: 60_000,
           },
         })
-        .then(resolve, reject);
+        .then(resolve, (error) => {
+          if (error?.name !== "NotAllowedError") return reject(error);
+          state.textContent = "The passkey was not created. Try again.";
+        });
     });
   });
   button.hidden = true;
