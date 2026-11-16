@@ -651,7 +651,7 @@ impl Supervisor {
     }
 
     /// Takes a status and device list as a poll would have.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mockup"))]
     pub(crate) fn set_health(cx: &mut App, health: Health, devices: Option<Vec<Device>>) {
         let supervisor = cx.global_mut::<Self>();
         supervisor.health = health;

@@ -6,6 +6,8 @@ use anyhow::{Context as _, Result, bail, ensure};
 use std::time::{Duration, Instant};
 
 mod fonts;
+#[cfg(feature = "mockup")]
+mod remote;
 mod themes;
 use fonts::verify_fonts;
 use themes::verify_themes;
@@ -17,6 +19,20 @@ pub(super) const SIDEBAR_PAGE: usize = Section::ALL.len();
 #[derive(Default)]
 struct Layout([Option<Bounds<Pixels>>; SIDEBAR_PAGE + 1]);
 impl Global for Layout {}
+
+/// Where Settings > Remote control's relays section painted.
+#[derive(Default)]
+pub(super) struct RelaysAt(pub(super) Option<Bounds<Pixels>>);
+impl Global for RelaysAt {}
+
+pub(super) fn relays_probe() -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        |bounds, _, _, cx| cx.default_global::<RelaysAt>().0 = Some(bounds),
+    )
+    .absolute()
+    .size_full()
+}
 
 pub(super) fn probe(index: usize) -> impl IntoElement {
     canvas(
@@ -30,7 +46,7 @@ pub(super) fn probe(index: usize) -> impl IntoElement {
 }
 
 #[cfg(feature = "mockup")]
-async fn capture_settings(
+pub(super) async fn capture_settings(
     settings: WindowHandle<SettingsWindow>,
     extension: &str,
     cx: &mut AsyncApp,
@@ -242,6 +258,13 @@ pub(crate) async fn verify_native(
             })??;
             if section == Section::Fonts {
                 verify_fonts(settings, source, expected, cx).await?;
+            }
+            #[cfg(feature = "mockup")]
+            if section == Section::RemoteControl
+                && std::env::var_os("HERDR_TEST_SETTINGS_CAPTURE").is_some()
+            {
+                let wide = expected.width == px(960.);
+                remote::capture_relays(settings, wide, cx).await?;
             }
             #[cfg(feature = "mockup")]
             if section == Section::Plugins {

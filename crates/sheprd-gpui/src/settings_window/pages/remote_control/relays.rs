@@ -350,7 +350,8 @@ impl SettingsWindow {
                 )
                 .child(self.relay_deploy_row())
         };
-        div()
+        let section = div()
+            .relative()
             .flex()
             .flex_col()
             .child(ui::section(
@@ -359,7 +360,11 @@ impl SettingsWindow {
                 None,
             ))
             .child(list)
-            .child(self.remote_public_relays(cx))
+            .child(self.remote_public_relays(cx));
+        // Where the section painted, for the native capture to scroll to.
+        #[cfg(all(feature = "integration-test", target_os = "macos"))]
+        let section = section.child(super::super::super::native::relays_probe());
+        section
     }
 
     /// Sheprd's own relays: what the signed list offers, each with Add.
