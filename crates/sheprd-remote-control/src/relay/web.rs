@@ -177,11 +177,13 @@ async fn current(
     relays.set_web_status(endpoint, |status| {
         status.url = Some(format!("https://{host}"));
     });
-    if let Some((der, pem)) = kept
+    if let Some(der) = kept.key
         && let Ok(pair) = KeyPair::try_from(der.as_slice())
     {
         relays.own_web_key(endpoint, &pair);
-        if let Ok(issued) = check(&pem, &pair, &host, roots, SystemTime::now()) {
+        if let Some(pem) = kept.chain
+            && let Ok(issued) = check(&pem, &pair, &host, roots, SystemTime::now())
+        {
             relays.serve_web(endpoint, serving(&issued, &pair, &host)?);
             relays.served_until(endpoint, issued.not_after);
             if SystemTime::now() < issued.renew_at() {
@@ -191,12 +193,22 @@ async fn current(
                 });
             }
         }
-        // Renewing keeps the key, so a pinned key stays pinned.
+        // Renewing keeps the key, so a pinned key stays pinned, and so
+        // does finishing an order a restart cut short.
         key = Some(pair);
     }
     let key = match key {
         Some(key) => key,
-        None => KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?,
+        None => {
+            // Kept before its CSR goes out: a restart while the CA issues
+            // finds it again, rather than making another and meeting this
+            // one's certificate in the CT logs as a stranger's.
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?;
+            let der = key.serialize_der();
+            let dir = dir.clone();
+            blocking(move || store::save_key(&dir, &der)).await?;
+            key
+        }
     };
     // Known as this computer's before the CA logs it, so the CT watch
     // never takes the certificate being ordered for another's.
@@ -206,8 +218,7 @@ async fn current(
         .await
         .map_err(Error::Issue)?;
     let issued = check(&pem, &key, &host, roots, SystemTime::now())?;
-    let der = key.serialize_der();
-    blocking(move || store::save(&dir, &der, &pem)).await?;
+    blocking(move || store::save_chain(&dir, &pem)).await?;
     relays.serve_web(endpoint, serving(&issued, &key, &host)?);
     relays.served_until(endpoint, issued.not_after);
     tracing::info!(relay = %endpoint, "serving browsers with a new web certificate");

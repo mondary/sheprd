@@ -39,9 +39,18 @@ pub(crate) fn dir(state_dir: &Path, endpoint: &str) -> PathBuf {
     state_dir.join("relay").join("web").join(name)
 }
 
-/// The kept key (PKCS#8 DER) and chain (PEM), when both are there.
-/// Blocking.
-pub(crate) fn load(dir: &Path) -> Result<Option<(Vec<u8>, String)>, Error> {
+/// What a relay's directory keeps: the key (PKCS#8 DER) and its chain
+/// (PEM), each when there. A key without a chain is one whose order did
+/// not finish; it is ordered for again rather than replaced, so the CT
+/// watch never meets a logged certificate for a key this computer lost.
+#[derive(Debug, Default)]
+pub(crate) struct Kept {
+    pub(crate) key: Option<Vec<u8>>,
+    pub(crate) chain: Option<String>,
+}
+
+/// What `dir` keeps. Blocking.
+pub(crate) fn load(dir: &Path) -> Result<Kept, Error> {
     let read = |name: &str| match fs::read(dir.join(name)) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -50,19 +59,23 @@ pub(crate) fn load(dir: &Path) -> Result<Option<(Vec<u8>, String)>, Error> {
             source,
         }),
     };
-    let (Some(key), Some(chain)) = (read(KEY)?, read(CHAIN)?) else {
-        return Ok(None);
-    };
-    Ok(String::from_utf8(chain).ok().map(|chain| (key, chain)))
+    Ok(Kept {
+        key: read(KEY)?,
+        chain: read(CHAIN)?.and_then(|chain| String::from_utf8(chain).ok()),
+    })
 }
 
-/// Keeps `key` and `chain`, each written whole or not at all. Blocking.
-pub(crate) fn save(dir: &Path, key: &[u8], chain: &str) -> Result<(), Error> {
-    for (name, bytes) in [(KEY, key), (CHAIN, chain.as_bytes())] {
-        let path = dir.join(name);
-        write_private(&path, bytes).map_err(|source| Error::Save { path, source })?;
-    }
-    Ok(())
+/// Keeps `key`, written whole or not at all, before its CSR is sent.
+/// Blocking.
+pub(crate) fn save_key(dir: &Path, key: &[u8]) -> Result<(), Error> {
+    let path = dir.join(KEY);
+    write_private(&path, key).map_err(|source| Error::Save { path, source })
+}
+
+/// Keeps `chain`, issued for the kept key. Blocking.
+pub(crate) fn save_chain(dir: &Path, chain: &str) -> Result<(), Error> {
+    let path = dir.join(CHAIN);
+    write_private(&path, chain.as_bytes()).map_err(|source| Error::Save { path, source })
 }
 
 /// The alert kept in `dir`, if any. One that does not read is still an

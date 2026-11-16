@@ -238,4 +238,5 @@ async fn a_browser_reaches_the_app_through_a_private_relays_front() {
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
 }
 
+mod pending_key;
 mod transparency;
