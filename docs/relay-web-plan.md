@@ -161,21 +161,27 @@ sessions, refusals, and bytes without names.
 
 ### Web sessions
 
-- The listener turns web access on with `{"t":"web","enabled":true}` on its
-  control socket (a field in the QUIC listen request), answered with a
-  status. Until then, its name does not answer.
-- The relay announces each web session with
-  `{"t":"incoming","session","kind":"web"}`, with no dial key. The listener
-  accepts it as it accepts a dial today (`/v1/accept/{session}` or a QUIC
-  stream), and the stream carries the browser's raw TLS bytes.
+- The listener turns web access on, or off, with its own message, answered
+  with a status: `0x22` then `1` or `0` on its QUIC listen stream, or
+  `{"t":"web","enabled":true}` on its WebSocket control socket. Until
+  then, its name does not answer. A relay that offers no web access (not
+  private, or no front) answers `forbidden`. Turning it off, or a new
+  listener on the route, ends its browser sessions.
+- The relay announces each browser connection without a dial key: over
+  QUIC, a stream it opens to the listener starting with the single byte
+  `INCOMING_WEB` (`0x11`) instead of `INCOMING` and a key; over the
+  WebSocket fallback, `{"t":"incoming_web","session"}`, which the listener
+  accepts at `/v1/accept/{session}` as any dial. Either way, what follows
+  is the browser's raw TLS, starting with its ClientHello.
 - Dial-key checks do not apply to web sessions: the computer authenticates
   the browser itself (passkeys, below). That is why web access is opt-in.
-- **Limits:** concurrent web sessions per route (16) and in total, new
-  connections per caller address per minute, bytes per session and per
-  route, and idle and total session time, all with the same knobs and
-  `Limits` style as the existing limits.
-- **Deny list:** an operator can block a route's web access (an abuse
-  report) without a restart; the listener hears a status that says so.
+- **Limits:** browser sessions per route (`--max-web-sessions-per-route`,
+  16), within the route's and the relay's session limits, dials per caller
+  address per minute, sessions per caller address, and the session
+  bandwidth, idle, and total time limits every session has.
+- **Deny list** (to come, before public relays offer web access): an
+  operator blocks a route's web access after an abuse report, without a
+  restart; the listener hears a status that says so.
 
 ### Certificates for computers
 
