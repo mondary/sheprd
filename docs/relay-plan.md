@@ -740,8 +740,10 @@ last uses its own domain.
   relay's limit per dial key. Still to come: QUIC on iOS, a relay label in
   the app, pairing over a relay, and the relay for intents, notification
   actions, and the share extension, which still go direct.
-- The PWA cannot use the relay: a browser cannot run the handshake inside a
-  WebSocket and then treat it as an origin. It keeps LAN and Tailscale.
+- The PWA cannot use this tunnel: a browser cannot run the handshake inside
+  a WebSocket and then treat it as an origin. It keeps LAN and Tailscale
+  until web access through a relay (`docs/relay-web-plan.md`), where the
+  relay routes the browser's own TLS to the computer by name.
 
 ### Sheprd and SSH machines
 
