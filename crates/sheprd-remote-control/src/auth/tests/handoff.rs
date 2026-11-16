@@ -188,3 +188,30 @@ fn a_handoff_survives_a_restart_and_stays_used_after_one() {
     let saved = std::fs::read_to_string(dir.path().join("handoffs.json")).unwrap();
     assert!(!saved.contains(handoff.token.expose_secret()));
 }
+
+#[test]
+fn a_handoff_minted_on_a_web_name_is_redeemed_there_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut auth = auth(dir.path());
+    let browser = signing_key(1);
+    let device = pair(&mut auth, &browser, T0);
+    let web = Scope::Web("abc.fra1.sheprd-relay.dev".into());
+    let handoff = auth.handoff_in(&device, &web, T0).unwrap();
+    let app = public_key(&signing_key(2));
+    let token = handoff.token.expose_secret();
+    // Not on the network, nor on another web name, where the new key
+    // would sign in without the passkey; the token stays good.
+    for scope in [
+        Scope::Network,
+        Scope::Web("other.fra1.sheprd-relay.dev".into()),
+    ] {
+        let refused = auth.redeem_in(IpAddr::from(CLIENT), token, &app, &scope, T0 + 1);
+        assert!(matches!(refused, Err(Error::InvalidToken)), "{refused:?}");
+    }
+    // Kept across a restart with its scope.
+    let mut again = super::auth(dir.path());
+    let redeemed = again
+        .redeem_in(IpAddr::from(CLIENT), token, &app, &web, T0 + 2)
+        .unwrap();
+    assert_eq!(redeemed, device);
+}

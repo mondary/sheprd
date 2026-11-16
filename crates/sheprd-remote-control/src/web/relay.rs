@@ -13,7 +13,9 @@ use serde::Deserialize;
 pub(super) async fn info(
     State(state): State<Shared>,
     _device: Device,
+    scope: crate::auth::Scope,
 ) -> Result<Json<crate::relay::Info>, ApiError> {
+    super::api::network_only(&scope)?;
     let relay = state.relay.as_ref().ok_or(ApiError::NotFound)?;
     relay.info().map(Json).ok_or(ApiError::NotFound)
 }
@@ -27,11 +29,16 @@ pub(super) struct Keys {
     tunnel: String,
 }
 
+///
+/// Not on a web name: a tunnel key enrolled there would let its holder
+/// dial in as this device without the passkey.
 pub(super) async fn enroll(
     State(state): State<Shared>,
     Device(device): Device,
+    scope: crate::auth::Scope,
     Json(keys): Json<Keys>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    super::api::network_only(&scope)?;
     let relay = state.relay.clone().ok_or(ApiError::NotFound)?;
     let keys = RelayKeys {
         dial: keys.dial,

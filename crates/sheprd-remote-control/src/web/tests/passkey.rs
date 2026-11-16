@@ -190,6 +190,37 @@ async fn a_browser_on_the_web_name_pairs_and_signs_in_with_a_passkey() {
         send(&state, with_bearer("/f/home", token)).await.0,
         StatusCode::UNAUTHORIZED
     );
+
+    // Keys and tokens that would outlast this one are not given there.
+    let authorized = |mut request: HttpRequest<Body>| {
+        request.headers_mut().insert(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        request
+    };
+    for (path, body) in [
+        ("/api/relay", json!({"dial": "x", "tunnel": "y"})),
+        ("/api/v2/hosts/h/pair", json!({"public_key": "x"})),
+        ("/api/apns", json!({})),
+    ] {
+        let status = send_web(&state, authorized(post(path, body))).await.0;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+    }
+    // A handoff minted there redeems there alone.
+    let (status, _, handoff) = send_web(&state, authorized(post("/api/handoff", json!({})))).await;
+    assert_eq!(status, StatusCode::OK, "{handoff}");
+    let handoff: Value = serde_json::from_str(&handoff).unwrap();
+    let app = SigningKey::from_slice(&[8; 32]).unwrap();
+    let app = URL_SAFE_NO_PAD.encode(app.verifying_key().to_sec1_point(false).as_bytes());
+    let redeem = || {
+        post(
+            "/api/handoff/redeem",
+            json!({"token": handoff["token"], "public_key": app}),
+        )
+    };
+    assert_ne!(send(&state, redeem()).await.0, StatusCode::OK);
+    assert_eq!(send_web(&state, redeem()).await.0, StatusCode::OK);
 }
 
 #[tokio::test]

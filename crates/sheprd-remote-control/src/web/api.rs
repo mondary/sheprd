@@ -141,6 +141,16 @@ pub(super) async fn claim(
     })))
 }
 
+/// Refuses what only the native app or a network path asks for on a web
+/// name, open to the internet: a token stolen there lasts minutes, and
+/// must not buy keys or tokens that outlast it without the passkey.
+pub(super) fn network_only(scope: &Scope) -> Result<(), ApiError> {
+    match scope.web_host() {
+        Some(_) => Err(ApiError::NotFound),
+        None => Ok(()),
+    }
+}
+
 /// The passkey a claim on the web name `host` made: checked before the
 /// token is spent, so a claim without one leaves the pairing open.
 fn claim_passkey(
@@ -196,8 +206,12 @@ pub(super) async fn claim_status(
 pub(super) async fn handoff(
     State(state): State<Shared>,
     Device(device): Device,
+    scope: Scope,
 ) -> Result<Json<Value>, ApiError> {
-    let handoff = with_auth(&state, move |auth| Ok(auth.handoff(&device, now_ms())?)).await?;
+    let handoff = with_auth(&state, move |auth| {
+        Ok(auth.handoff_in(&device, &scope, now_ms())?)
+    })
+    .await?;
     Ok(Json(json!({
         "token": handoff.token.expose_secret(),
         "expires_ms": handoff.expires_ms,
@@ -218,18 +232,20 @@ pub(super) async fn redeem(
     scope: Scope,
     Json(request): Json<RedeemRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    let origins = state.origins_for(&scope);
     let device = with_auth(&state, move |auth| {
-        Ok(auth.redeem(
+        Ok(auth.redeem_in(
             peer.ip(),
             request.token.expose_secret(),
             &request.public_key,
+            &scope,
             now_ms(),
         )?)
     })
     .await?;
     Ok(Json(json!({
         "device": device.0,
-        "origins": state.origins_for(&scope),
+        "origins": origins,
         "fingerprint": state.fingerprint,
         "computer": state.computer,
     })))
@@ -437,8 +453,10 @@ pub(super) async fn start_chat(
 pub(super) async fn register_apns(
     State(state): State<Shared>,
     Device(device): Device,
+    scope: Scope,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>, ApiError> {
+    network_only(&scope)?;
     if state.apns.is_none() {
         return Err(ApiError::NoPush);
     }

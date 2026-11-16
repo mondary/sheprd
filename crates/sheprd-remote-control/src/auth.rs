@@ -657,21 +657,46 @@ impl Auth {
     }
 
     /// A token that moves `device`'s access into its Home Screen app.
+    #[cfg(test)]
     pub(crate) fn handoff(&mut self, device: &DeviceId, now_ms: u64) -> Result<Handoff> {
+        self.handoff_in(device, &Scope::Network, now_ms)
+    }
+
+    /// [`Self::handoff`] from a session in `scope`, redeemable there alone:
+    /// a token minted on a web name must not buy a device key that signs
+    /// in on the network without the passkey.
+    pub(crate) fn handoff_in(
+        &mut self,
+        device: &DeviceId,
+        scope: &Scope,
+        now_ms: u64,
+    ) -> Result<Handoff> {
         if self.devices.get(device).is_none() {
             return Err(Error::UnknownDevice);
         }
-        self.handoffs.mint(device, now_ms)
+        self.handoffs.mint(device, scope, now_ms)
     }
 
-    /// The Home Screen app at `client` redeems a handoff with its own key:
-    /// the device keeps its ID and name, takes the new key, and the
-    /// browser's sessions end.
+    #[cfg(test)]
     pub(crate) fn redeem(
         &mut self,
         client: IpAddr,
         token: &str,
         public_key: &str,
+        now_ms: u64,
+    ) -> Result<DeviceId> {
+        self.redeem_in(client, token, public_key, &Scope::Network, now_ms)
+    }
+
+    /// The Home Screen app at `client` redeems a handoff minted in `scope`
+    /// with its own key: the device keeps its ID, name, and passkey, takes
+    /// the new key, and the browser's sessions end.
+    pub(crate) fn redeem_in(
+        &mut self,
+        client: IpAddr,
+        token: &str,
+        public_key: &str,
+        scope: &Scope,
         now_ms: u64,
     ) -> Result<DeviceId> {
         if !self.pair_limit.allow(client, now_ms) {
@@ -680,7 +705,7 @@ impl Auth {
         let public_key = PublicKey::parse(public_key)?;
         let device = self
             .handoffs
-            .redeem(token, now_ms)?
+            .redeem(token, scope, now_ms)?
             .ok_or(Error::InvalidToken)?;
         self.devices.rekey(&device, public_key)?;
         self.sessions.end_device(&device);

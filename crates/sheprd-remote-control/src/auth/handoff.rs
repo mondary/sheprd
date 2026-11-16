@@ -10,8 +10,8 @@
 //! paired; a digest cannot be turned back into its token.
 
 use super::{
-    Error, Result, SECRET_LEN, constant_time_eq, decode_fixed, devices::write_private, encode,
-    random_bytes, sha256,
+    Error, Result, SECRET_LEN, Scope, constant_time_eq, decode_fixed, devices::write_private,
+    encode, random_bytes, sha256,
 };
 use crate::control::DeviceId;
 use secrecy::SecretString;
@@ -36,9 +36,18 @@ pub(crate) struct Handoff {
     pub(crate) expires_ms: u64,
 }
 
+/// One device's open token: its digest, when it expires, and the scope
+/// it was minted in, the only one it is redeemed in.
+#[derive(Clone, Debug)]
+struct Open {
+    digest: [u8; 32],
+    expires_ms: u64,
+    scope: Scope,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct Handoffs {
-    open: HashMap<DeviceId, ([u8; 32], u64)>,
+    open: HashMap<DeviceId, Open>,
     /// Where the digests are saved; none keeps them in memory only.
     path: Option<PathBuf>,
 }
@@ -48,6 +57,9 @@ struct Saved {
     device: DeviceId,
     digest: String,
     expires_ms: u64,
+    /// The web name it was minted on; none on the network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    web: Option<String>,
 }
 
 impl Handoffs {
@@ -64,7 +76,13 @@ impl Handoffs {
             .into_iter()
             .filter_map(|saved| {
                 let digest = decode_fixed::<32>(&saved.digest).ok()?;
-                Some((saved.device, (digest, saved.expires_ms)))
+                let scope = saved.web.map_or(Scope::Network, Scope::Web);
+                let open = Open {
+                    digest,
+                    expires_ms: saved.expires_ms,
+                    scope,
+                };
+                Some((saved.device, open))
             })
             .collect();
         Self {
@@ -73,13 +91,22 @@ impl Handoffs {
         }
     }
 
-    pub(crate) fn mint(&mut self, device: &DeviceId, now_ms: u64) -> Result<Handoff> {
-        self.open.retain(|_, (_, expires)| *expires > now_ms);
+    pub(crate) fn mint(
+        &mut self,
+        device: &DeviceId,
+        scope: &Scope,
+        now_ms: u64,
+    ) -> Result<Handoff> {
+        self.open.retain(|_, open| open.expires_ms > now_ms);
         let secret = random_bytes::<SECRET_LEN>()?;
         let token = encode(&secret);
         let expires_ms = now_ms + HANDOFF_TTL_MS;
-        self.open
-            .insert(device.clone(), (sha256(&[token.as_bytes()]), expires_ms));
+        let open = Open {
+            digest: sha256(&[token.as_bytes()]),
+            expires_ms,
+            scope: scope.clone(),
+        };
+        self.open.insert(device.clone(), open);
         self.save()?;
         Ok(Handoff {
             token: token.into(),
@@ -87,15 +114,25 @@ impl Handoffs {
         })
     }
 
-    /// The device `token` was minted for, using the token up; `None` when it
-    /// is unknown, used, or expired. The use is saved before the device is
+    /// The device `token` was minted for in `scope`, using the token up;
+    /// `None` when it is unknown, used, expired, or from another scope,
+    /// which leaves it unused. The use is saved before the device is
     /// returned, so a restart cannot make the token valid again.
-    pub(crate) fn redeem(&mut self, token: &str, now_ms: u64) -> Result<Option<DeviceId>> {
+    pub(crate) fn redeem(
+        &mut self,
+        token: &str,
+        scope: &Scope,
+        now_ms: u64,
+    ) -> Result<Option<DeviceId>> {
         let digest = sha256(&[token.as_bytes()]);
         let Some(device) = self
             .open
             .iter()
-            .find(|(_, (stored, expires))| *expires > now_ms && constant_time_eq(stored, &digest))
+            .find(|(_, open)| {
+                open.expires_ms > now_ms
+                    && &open.scope == scope
+                    && constant_time_eq(&open.digest, &digest)
+            })
             .map(|(device, _)| device.clone())
         else {
             return Ok(None);
@@ -125,10 +162,11 @@ impl Handoffs {
         let saved: Vec<Saved> = self
             .open
             .iter()
-            .map(|(device, (digest, expires_ms))| Saved {
+            .map(|(device, open)| Saved {
                 device: device.clone(),
-                digest: encode(digest),
-                expires_ms: *expires_ms,
+                digest: encode(&open.digest),
+                expires_ms: open.expires_ms,
+                web: open.scope.web_host().map(str::to_owned),
             })
             .collect();
         let content = serde_json::to_vec(&saved).map_err(Error::Encode)?;

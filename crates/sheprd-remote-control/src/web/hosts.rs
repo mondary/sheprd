@@ -30,12 +30,16 @@ pub(super) struct PairRequest {
     public_key: String,
 }
 
+/// Not on a web name: the key it pairs elsewhere would outlast a stolen
+/// token there without the passkey.
 pub(super) async fn pair(
     State(state): State<Shared>,
     Device(device): Device,
+    scope: crate::auth::Scope,
     Path(host): Path<String>,
     Json(request): Json<PairRequest>,
 ) -> Result<Json<HostState>, ApiError> {
+    super::api::network_only(&scope)?;
     let state = with_auth(&state, move |auth| {
         Ok(auth.ask_host(&device, &HostId(host), &request.public_key, now_ms())?)
     })
