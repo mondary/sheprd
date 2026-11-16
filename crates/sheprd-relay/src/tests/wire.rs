@@ -45,7 +45,7 @@ fn a_listen_round_trips_with_and_without_a_token() {
             Ok(Parse::Done(request, bytes.len()))
         );
     }
-    assert_eq!(listen(&[0; 255]).encode().unwrap().len(), MAX_REQUEST);
+    assert!(listen(&[0; 255]).encode().unwrap().len() <= MAX_REQUEST);
     assert_eq!(listen(&[0; 256]).encode(), Err(Malformed::Token));
 }
 
@@ -115,7 +115,7 @@ fn a_pairing_key_carries_its_lifetime() {
 
 #[test]
 fn unknown_kinds_are_refused() {
-    for kind in [0x00, 0x03, 0x10, 0xff] {
+    for kind in [0x00, 0x04, 0x10, 0xff] {
         assert_eq!(Request::parse(&[kind]), Err(Malformed::Kind(kind)));
     }
     for kind in [0x01, 0x02, 0x23] {
@@ -125,11 +125,11 @@ fn unknown_kinds_are_refused() {
 
 #[test]
 fn statuses_round_trip_and_unknown_bytes_are_none() {
-    for byte in 0..=9 {
+    for byte in 0..=10 {
         assert_eq!(
             Status::from_byte(byte).map(|status| status as u8),
             Some(byte)
         );
     }
-    assert_eq!(Status::from_byte(10), None);
+    assert_eq!(Status::from_byte(11), None);
 }

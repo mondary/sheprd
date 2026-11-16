@@ -1,6 +1,7 @@
 //! The relay service: a relay on a loopback port, and listener and dialer
 //! sockets that speak its protocol.
 
+mod acme;
 mod auth;
 mod bans;
 mod binding;
@@ -28,6 +29,8 @@ mod shared_address;
 #[cfg(feature = "client")]
 mod through;
 mod tokens;
+#[cfg(feature = "client")]
+mod web_certificate;
 
 pub(crate) use super::{hello, public, sign, signing_key};
 use crate::{

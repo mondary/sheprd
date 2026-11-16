@@ -185,39 +185,46 @@ sessions, refusals, and bytes without names.
 
 ### Certificates for computers
 
-- **Account.** On first start the relay creates an ACME account key (P-256)
-  and registers it, keeping the key where it keeps the dashboard token
-  (`cloud-init` writes it 0600; App Platform passes it as a secret). The
-  relay prints the account URI at start so the operator can put it in CAA.
-  This is the relay's only lasting secret besides the dashboard token, and
-  losing it costs only re-registration and a CAA update.
-- **Request.** The listener sends `{"t":"csr","csr":"<base64 DER>"}`. The
-  relay checks:
-  - the CSR's signature;
-  - exactly one name, and it is this listener's own label under this
-    relay's host;
-  - the key is P-256 or Ed25519 (if Let's Encrypt accepts it by then);
-  - this route has not passed its issuance allowance.
+- **Account.** With `--acme-dir`, on a relay that offers web access, the
+  relay creates its ACME account on first use and keeps its credentials
+  there (`account.json`, 0600; `/opt/sheprd-relay/acme` on a droplet). It
+  logs the account URI once ready, for CAA's `accounturi`. This is the
+  relay's only lasting secret besides the dashboard token; losing it costs
+  only a new account and a CAA update.
+- **Request** (QUIC; the WebSocket fallback has none yet). The listener
+  opens a stream with `0x03`, its key, a signature over the connection's
+  exporter (context `sheprd-relay/certificate/quic/v1`), and the CSR's
+  DER. The relay checks, before ordering anything:
+  - the proof, and that the route listens with web access on;
+  - the CSR's signature, and that its key is P-256;
+  - exactly one name, the route's own web name under this relay's host;
+  - the allowance (Rationing).
 - **Issuance.** The relay orders the certificate with `instant-acme`, answers
-  TLS-ALPN-01 at its front, and returns `{"t":"certificate","chain"}` or a
-  status (`refused`, `rate_limited`, `failed`). Orders live in memory only
-  and are bounded; a restart drops them, and the listener asks again.
+  TLS-ALPN-01 at its front while the order waits, and answers `ok`, the
+  PEM chain's length, and the chain; or a status: `forbidden` (no web
+  access or no issuer), `refused` (a CSR it will not sign for), `limited`
+  (rationed), `busy` (four orders already running), `failed` (the CA
+  refused or failed, logged by kind only). Orders live in memory, bounded
+  by three minutes; a restart drops them, and the listener asks again.
 - **Renewal.** The listener asks again at two-thirds of the certificate's
-  lifetime, with the same key unless it is rotating. The relay checks ARI
-  and renews within its window, so renewals do not count against the
-  weekly limit. The plan holds as lifetimes shrink.
-- **Rationing.** At most one new (non-renewal) certificate per route per
-  three days, and a per-relay weekly cap below the domain's limit (default
-  40, divided by the number of relays the operator runs). It is in memory,
-  so a restart resets it; Let's Encrypt's own limit stays the hard stop.
+  lifetime, with the same key unless it is rotating. Let's Encrypt does not
+  count a renewal for the same name against the weekly limit. ARI renewal
+  windows are still to come.
+- **Rationing.** One attempt per computer every ten minutes, one
+  certificate per computer every three days, and at most `--acme-weekly`
+  (40) a week from one relay; divide the domain's 50 among the relays on
+  it. It is in memory, so a restart resets it; Let's Encrypt's own limit
+  stays the hard stop.
 
 ### Deployment
 
 - `compose.yml`: the relay publishes TCP and UDP 443; Caddy moves to an
   internal port behind PROXY protocol, and keeps getting the relay's own
   certificate.
-- `cloud-init.yml`, `create-droplet.sh`: generate the ACME account key, add
-  the wildcard record, and print the CAA records to add.
+- `cloud-init.yml`, `compose.yml`: a writable `acme` directory for the
+  account (`RELAY_ACME_DIR`), used only on a private relay. Still to come:
+  `create-droplet.sh` adding the wildcard record and printing the CAA
+  records to add.
 - `app.yaml` (App Platform): no web access. App Platform ends TLS itself, so
   it cannot pass the browser's TLS to a computer; `/v1/info` says
   `"web": false`.

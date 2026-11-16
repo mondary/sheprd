@@ -7,7 +7,10 @@
 use crate::{
     RouteId,
     pin::{self, Pin, SERVER_NAME, client_transport},
-    wire::{self, EXPORTER_LABEL, EXPORTER_LEN, INCOMING, KEY_LEN, Key, Message, Request, Status},
+    wire::{
+        self, EXPORTER_LABEL, EXPORTER_LEN, INCOMING, INCOMING_WEB, KEY_LEN, Key, MAX_CHAIN,
+        Message, Request, Status,
+    },
 };
 use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
 use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
@@ -132,6 +135,24 @@ pub struct Incoming {
     pub send: SendStream,
 }
 
+/// A browser's connection to the computer's web name: its TLS bytes,
+/// starting with the ClientHello, which the computer ends itself and
+/// authenticates (`docs/relay-web-plan.md`).
+#[derive(Debug)]
+pub struct WebStream {
+    pub recv: RecvStream,
+    pub send: SendStream,
+}
+
+/// What a stream the relay opened carries.
+#[derive(Debug)]
+pub enum Arrival {
+    /// A device's dial.
+    Device(Incoming),
+    /// A browser at the web name, while web access is on.
+    Web(WebStream),
+}
+
 /// A stream the relay opened for a dial, its header not read yet.
 #[derive(Debug)]
 pub struct Pending {
@@ -140,19 +161,38 @@ pub struct Pending {
 }
 
 impl Pending {
-    /// Reads the header the relay puts first: which key dialed.
-    pub async fn incoming(mut self) -> Result<Incoming> {
-        let mut header = [0; 1 + KEY_LEN];
-        self.recv.read_exact(&mut header).await?;
-        let [kind, key @ ..] = header;
-        if kind != INCOMING {
-            return Err(Error::Malformed);
+    /// Reads the header the relay puts first: which key dialed. A browser
+    /// stream, which only a listener that turned web access on gets, is
+    /// [`Error::Malformed`] here; such a listener reads
+    /// [`Pending::arrival`].
+    pub async fn incoming(self) -> Result<Incoming> {
+        match self.arrival().await? {
+            Arrival::Device(incoming) => Ok(incoming),
+            Arrival::Web(_) => Err(Error::Malformed),
         }
-        Ok(Incoming {
-            key,
-            recv: self.recv,
-            send: self.send,
-        })
+    }
+
+    /// Reads the header the relay puts first: a device's dial and its key,
+    /// or a browser's connection, never past it.
+    pub async fn arrival(mut self) -> Result<Arrival> {
+        let mut kind = [0; 1];
+        self.recv.read_exact(&mut kind).await?;
+        match kind[0] {
+            INCOMING => {
+                let mut key = [0; KEY_LEN];
+                self.recv.read_exact(&mut key).await?;
+                Ok(Arrival::Device(Incoming {
+                    key,
+                    recv: self.recv,
+                    send: self.send,
+                }))
+            }
+            INCOMING_WEB => Ok(Arrival::Web(WebStream {
+                recv: self.recv,
+                send: self.send,
+            })),
+            _ => Err(Error::Malformed),
+        }
     }
 }
 
@@ -199,6 +239,36 @@ impl Listener {
     /// Allows `key` one dial within `seconds`, for pairing.
     pub async fn add_pairing_key(&mut self, key: Key, seconds: u16) -> Result<()> {
         self.message(Message::PairingKey { key, seconds }).await
+    }
+
+    /// Lets browsers reach this computer at its web name, or stops them.
+    /// A relay that offers no web access answers [`Status::Forbidden`].
+    pub async fn set_web(&mut self, on: bool) -> Result<()> {
+        self.message(Message::Web(on)).await
+    }
+
+    /// Asks the relay for the web name's certificate, for `csr` (DER), with
+    /// the route's own `key`: the PEM chain. Web access must be on. Takes
+    /// as long as the CA does, up to a few minutes.
+    pub async fn certificate(&self, key: &SigningKey, csr: &[u8]) -> Result<String> {
+        let request = Request::Certificate {
+            csr: csr.to_vec(),
+            key: public(key),
+            signature: sign(key, &wire::certificate_signed(&exported(&self.connection)?)),
+        };
+        let (mut send, mut recv) = self.connection.open_bi().await?;
+        send.write_all(&request.encode().map_err(|_| Error::Malformed)?)
+            .await?;
+        expect_ok(&mut recv).await?;
+        let mut length = [0; 4];
+        recv.read_exact(&mut length).await?;
+        let length = usize::try_from(u32::from_be_bytes(length)).map_err(|_| Error::Malformed)?;
+        if length > MAX_CHAIN {
+            return Err(Error::Malformed);
+        }
+        let mut chain = vec![0; length];
+        recv.read_exact(&mut chain).await?;
+        String::from_utf8(chain).map_err(|_| Error::Malformed)
     }
 
     /// The next dial: a stream the relay opened on this connection, its

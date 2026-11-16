@@ -34,6 +34,8 @@
 //! - [`quic`]: the QUIC transport, sessions as streams.
 //! - [`web`]: the WebSocket fallback over HTTPS, for networks without UDP,
 //!   and the dashboard's routes.
+//! - [`acme`]: certificates for computers' web names, ordered for their
+//!   CSRs, and the challenges the front answers for them.
 //! - [`front`]: the TCP front on port 443, routing TLS by server name
 //!   without ending it, so browsers reach computers' web access.
 
@@ -42,6 +44,8 @@
 //! [`route`], [`socket`], and [`wire`] are built:
 //! what a client needs to reach a relay.
 
+#[cfg(feature = "server")]
+pub mod acme;
 #[cfg(feature = "server")]
 mod broker;
 #[cfg(feature = "server")]

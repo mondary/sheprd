@@ -37,6 +37,10 @@ services:
       # Caddy, with a PROXY header naming the caller.
       RELAY_FRONT: 0.0.0.0:8444
       RELAY_FRONT_UPSTREAM: caddy:443
+      # The ACME account that orders computers' web certificates, kept so
+      # its URI, pinned in CAA, survives restarts. Used only on a private
+      # relay (RELAY_LISTEN_TOKEN set); writable by 65532, as quic is.
+      RELAY_ACME_DIR: /acme
     ports:
       - "443:8443/udp"
       - "443:8444/tcp"
@@ -46,6 +50,7 @@ services:
     volumes:
       - ./bans:/bans:ro
       - ./quic:/quic
+      - ./acme:/acme
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

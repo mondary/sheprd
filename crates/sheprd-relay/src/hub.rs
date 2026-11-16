@@ -60,6 +60,8 @@ pub struct Hub {
     dials: PerAddress,
     /// Bans, earned and manual.
     pub guard: Guard,
+    /// Orders computers' web certificates, when the relay offers them.
+    issuer: Option<Arc<crate::acme::Issuer>>,
     pub limits: Limits,
     listens: PerAddress,
     pub metrics: Metrics,
@@ -261,6 +263,7 @@ impl Hub {
             connects: PerAddress::new(limits.connections_per_minute, origin),
             dials: PerAddress::new(limits.dials_per_minute, origin),
             guard: Guard::new(limits.auto_ban, limits.max_transfer_per_hour),
+            issuer: None,
             limits,
             listens: PerAddress::new(limits.listens_per_minute, origin),
             metrics: Metrics::default(),
@@ -289,6 +292,19 @@ impl Hub {
     #[must_use]
     pub const fn offers_web(&self) -> bool {
         self.web
+    }
+
+    /// Orders certificates for web names with `issuer`.
+    #[must_use]
+    pub fn with_issuer(mut self, issuer: Arc<crate::acme::Issuer>) -> Self {
+        self.issuer = Some(issuer);
+        self
+    }
+
+    /// What orders web certificates, when the relay offers them.
+    #[must_use]
+    pub fn issuer(&self) -> Option<&Arc<crate::acme::Issuer>> {
+        self.issuer.as_ref()
     }
 
     fn state(&self) -> MutexGuard<'_, State> {

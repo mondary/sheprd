@@ -42,6 +42,17 @@ impl Hub {
         true
     }
 
+    /// Whether `route` has a listener with web access on.
+    #[must_use]
+    pub fn web_on(&self, route: &RouteId) -> bool {
+        self.web
+            && self
+                .state()
+                .listeners
+                .get(route)
+                .is_some_and(|listener| listener.web)
+    }
+
     /// Tells the listener at `label` that a browser from `dialer` connects,
     /// holding a slot for it, if that listener has web access on. Refused
     /// as `Offline` otherwise, exactly as a name no one holds.

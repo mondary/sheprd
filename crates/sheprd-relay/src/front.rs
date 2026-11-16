@@ -8,6 +8,7 @@
 mod error;
 pub mod hello;
 pub mod proxy;
+mod replay;
 mod serve;
 
 pub use error::Error;

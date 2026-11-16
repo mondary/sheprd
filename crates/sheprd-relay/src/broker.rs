@@ -4,7 +4,7 @@
 //! Each step counts its outcome and answers with a wire [`Status`].
 
 use crate::{
-    RouteId, WebLabel,
+    RouteId, WebLabel, acme,
     bucket::Outcome,
     hub::{Accepted, DialRefusal, Hub, ListenRefusal, Registration, Session, Waiting},
     metrics::{Dial, Listen, Offense},
@@ -58,6 +58,64 @@ pub fn listen(
             })?;
     hub.metrics.listen(Listen::Ready);
     Ok(registration)
+}
+
+/// Gets `route`'s holder a certificate for its web name: checks the
+/// address's rate and the proof over `signed`, that the route listens with
+/// web access on, then has the issuer check `csr` and order it. Returns
+/// the PEM chain, or the status to answer. Failures are logged by kind
+/// only: an ACME error can name the host, which names the route.
+pub async fn certificate(
+    hub: &Arc<Hub>,
+    address: IpAddr,
+    (key, signature, signed): (&Key, &[u8], &[u8]),
+    csr: &[u8],
+) -> Result<String, Status> {
+    if let Some(offense) = limited(hub.allow_listen(address)) {
+        if let Some(offense) = offense {
+            hub.offend(address, offense);
+        }
+        return Err(Status::Limited);
+    }
+    let Ok(route) = prove(key, signature, signed) else {
+        hub.offend(address, Offense::BadProof);
+        return Err(Status::Refused);
+    };
+    let Some(issuer) = hub.issuer().filter(|_| hub.web_on(&route)) else {
+        return Err(Status::Forbidden);
+    };
+    issuer.issue(route, csr).await.map_err(|error| match error {
+        acme::Error::Csr(_) => {
+            hub.offend(address, Offense::Malformed);
+            Status::Refused
+        }
+        acme::Error::Rationed | acme::Error::Weekly => Status::Limited,
+        acme::Error::Busy => Status::Busy,
+        other => {
+            tracing::warn!(
+                kind = failure(&other),
+                "a web certificate could not be issued"
+            );
+            Status::Failed
+        }
+    })
+}
+
+/// A name for an issuance failure that carries no host.
+fn failure(error: &acme::Error) -> &'static str {
+    match error {
+        acme::Error::Acme(_) => "acme",
+        acme::Error::Authorization(_) | acme::Error::NoChallenge => "authorization",
+        acme::Error::NotReady(_) => "validation",
+        acme::Error::TimedOut => "timeout",
+        acme::Error::Challenge(_) => "challenge certificate",
+        acme::Error::Read { .. } | acme::Error::Saved(_) | acme::Error::Write { .. } => {
+            "account file"
+        }
+        acme::Error::Busy | acme::Error::Csr(_) | acme::Error::Rationed | acme::Error::Weekly => {
+            "refused"
+        }
+    }
 }
 
 /// What a rate limit's `outcome` costs the caller: nothing when allowed

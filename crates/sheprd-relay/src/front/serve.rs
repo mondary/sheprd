@@ -2,19 +2,24 @@
 //! name says. Every byte read to find the name is passed on unchanged.
 
 use super::{
-    ClientHello, Destination,
+    ACME_TLS_ALPN, ClientHello, Destination,
     hello::{self, MAX_READ},
     proxy,
+    replay::Replay,
 };
 use crate::{
-    WebLabel, broker,
+    WebLabel,
+    acme::Answer,
+    broker,
     hub::Hub,
     metrics::{Front, Offense, Refused},
+    pin::provider,
     serve::capped::{Capped, Held},
     splice::{Peer, splice},
     wire::Parse,
 };
 use axum::{body::Bytes, serve::Listener as _};
+use rustls::{pki_types::PrivateKeyDer, server::ResolvesServerCert, sign::CertifiedKey};
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
@@ -25,6 +30,7 @@ use tokio::{
     net::TcpStream,
     time::timeout,
 };
+use tokio_rustls::TlsAcceptor;
 
 /// How long a caller has to send its whole ClientHello. A real client
 /// sends it at once; slow networks still manage well within this.
@@ -82,9 +88,56 @@ async fn connection(mut held: Held, peer: SocketAddr, hub: Arc<Hub>, config: Con
             forward(held, &buffered, peer, &hub, config.upstream.as_deref()).await
         }
         Destination::Web(label) => web(held, buffered, address, &hub, label).await,
-        // Certificate challenges are not answered yet, so they are closed
-        // as any name the relay does not serve.
-        Destination::Challenge(_) | Destination::Refuse => hub.metrics.front(Front::Refused),
+        Destination::Challenge(label) => challenge(held, buffered, &hub, label).await,
+        Destination::Refuse => hub.metrics.front(Front::Refused),
+    }
+}
+
+/// Answers a TLS-ALPN-01 validation for `label` with its challenge
+/// certificate, while the relay orders that computer's certificate. With
+/// no order pending, it is closed as any unknown name.
+async fn challenge(held: Held, buffered: Vec<u8>, hub: &Hub, label: WebLabel) {
+    let answer = hub
+        .issuer()
+        .and_then(|issuer| issuer.challenges.get(&label));
+    let Some(config) = answer.and_then(|answer| challenge_config(&answer).ok()) else {
+        return hub.metrics.front(Front::Refused);
+    };
+    hub.metrics.front(Front::Challenge);
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+    let _ = timeout(HELLO_TIMEOUT, async move {
+        let mut tls = acceptor.accept(Replay::new(buffered, held)).await.ok()?;
+        tls.shutdown().await.ok()
+    })
+    .await;
+}
+
+/// A TLS server that offers only `acme-tls/1` and the challenge's
+/// certificate (RFC 8737, 3). Served through a fixed resolver: rustls
+/// refuses to load, as its own, a certificate whose critical
+/// `acmeIdentifier` extension it does not know, and only the validation
+/// server reads it.
+fn challenge_config(answer: &Answer) -> Result<rustls::ServerConfig, rustls::Error> {
+    let provider = provider();
+    let key = provider
+        .key_provider
+        .load_private_key(PrivateKeyDer::Pkcs8(answer.key.clone_key()))?;
+    let certified = CertifiedKey::new(vec![answer.certificate.clone()], key);
+    let mut config = rustls::ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()?
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(Fixed(Arc::new(certified))));
+    config.alpn_protocols = vec![ACME_TLS_ALPN.to_vec()];
+    Ok(config)
+}
+
+/// Always the one certificate.
+#[derive(Debug)]
+struct Fixed(Arc<CertifiedKey>);
+
+impl ResolvesServerCert for Fixed {
+    fn resolve(&self, _: rustls::server::ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(Arc::clone(&self.0))
     }
 }
 

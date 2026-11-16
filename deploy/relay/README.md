@@ -153,6 +153,7 @@ told what the outside looks like. Each deploy sets these for you:
 | `RELAY_QUIC_IDENTITY_DIR` | Where QUIC's certificate is kept, so its pin survives restarts and can be listed in Sheprd's signed relay list | `/quic`, from `/opt/sheprd-relay/quic` | QUIC is off |
 | `RELAY_PUBLIC_HOST` | The name clients use, which WebSocket proofs must cover | `RELAY_DOMAIN` | `${APP_DOMAIN}` |
 | `RELAY_FRONT` | The TCP front: routes TLS by server name without ending it, so computers' web names reach them (`docs/relay-web-plan.md`); web access is offered only on a private relay, with `RELAY_LISTEN_TOKEN` or `RELAY_LISTEN_TOKEN_FILE` | `0.0.0.0:8444`, published on TCP 443 | off: the platform ends TLS |
+| `RELAY_ACME_DIR` | Where the ACME account that orders computers' web certificates is kept; its URI, logged once ready, goes in CAA (`docs/relay-web-plan.md`) | `/acme`, from `/opt/sheprd-relay/acme` | not set |
 | `RELAY_FRONT_UPSTREAM` | Where the front sends the relay's own name, with a PROXY v2 header | `caddy:443` | not set |
 | `RELAY_BEHIND_PROXY` | Take callers' addresses from the last entry of the last `X-Forwarded-For` line; only behind a proxy that appends to that header or replaces it, as Caddy does | `1` (Caddy) | not set |
 | `RELAY_CLIENT_IP_HEADER` | Take them from this header instead | not set | `do-connecting-ip` |

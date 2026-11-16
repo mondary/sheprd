@@ -224,6 +224,8 @@ quinn                = { default-features = false, features = ["runtime-tokio", 
 http-body-util       = "0.1"
 hyper                = { default-features = false, features = ["client", "http2"], version = "1" }
 hyper-util           = { default-features = false, features = ["tokio"], version = "0.1" }
+# The relay's ACME client, ordering computers' web certificates for their CSRs.
+instant-acme         = { default-features = false, features = ["hyper-rustls", "ring"], version = "0.8.5" }
 # Certificate validity dates for rcgen, from a `SystemTime`.
 time                 = { default-features = false, features = ["std"], version = "0.3.47" }
 toml                 = "1.1"

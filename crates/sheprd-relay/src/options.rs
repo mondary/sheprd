@@ -42,6 +42,14 @@ Every option is optional, and each can also be set as a RELAY_* variable
                                  --public-host (default off). Web access is
                                  offered only on a private relay, one with
                                  listen tokens
+  --acme-dir DIR                 Order computers' web certificates for their CSRs,
+                                 keeping the ACME account here (writable by the
+                                 relay). Needs web access: --front, a host
+                                 name in --public-host, and listen tokens
+  --acme-directory URL           The ACME directory (default Let's Encrypt)
+  --acme-root FILE               Trust this CA for the ACME server, for a test
+                                 CA such as Pebble
+  --acme-weekly N                New certificates per week (default 40)
   --front-upstream HOST:PORT     Where the front sends the relay's own name: the
                                  HTTPS server in front of --listen, which must
                                  accept PROXY protocol v2 (caddy:8443)
@@ -128,6 +136,10 @@ pub enum Kind {
 pub const SETTINGS: &[(&str, Kind)] = &[
     // keep-sorted start
     ("accept-timeout", Kind::Duration),
+    ("acme-dir", Kind::Text),
+    ("acme-directory", Kind::Text),
+    ("acme-root", Kind::Text),
+    ("acme-weekly", Kind::Count),
     ("auto-ban", Kind::Text),
     ("ban", Kind::Text),
     ("ban-file", Kind::File),
@@ -180,6 +192,15 @@ const FRAME_RANGE: std::ops::RangeInclusive<u64> = 1024..=(16 * 1024 * 1024);
 /// What the relay was started with. `Debug` redacts the secrets.
 #[derive(Clone, Debug)]
 pub struct Options {
+    /// Where the ACME account is kept; without it, the relay orders no
+    /// certificates.
+    pub acme_dir: Option<PathBuf>,
+    /// The ACME directory URL.
+    pub acme_directory: String,
+    /// A CA to trust for the ACME server, for tests.
+    pub acme_root: Option<PathBuf>,
+    /// New certificates per week.
+    pub acme_weekly: usize,
     /// Ranges banned by hand, from `--ban`.
     pub bans: Vec<crate::guard::Cidr>,
     /// A file of ranges banned by hand, re-read every 30 seconds.
@@ -216,6 +237,10 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            acme_dir: None,
+            acme_directory: crate::acme::LETS_ENCRYPT.to_owned(),
+            acme_root: None,
+            acme_weekly: crate::acme::DEFAULT_WEEKLY,
             bans: Vec::new(),
             ban_file: None,
             behind_proxy: false,
@@ -352,6 +377,13 @@ impl Options {
         let limits = &mut self.limits;
         match name {
             "accept-timeout" => limits.accept_timeout = duration()?,
+            "acme-dir" => self.acme_dir = Some(PathBuf::from(text)),
+            "acme-directory" if text.starts_with("https://") => {
+                self.acme_directory = text.to_owned()
+            }
+            "acme-directory" => return Err(invalid()),
+            "acme-root" => self.acme_root = Some(PathBuf::from(text)),
+            "acme-weekly" => self.acme_weekly = count()?,
             "auto-ban" => {
                 limits.auto_ban = match text.trim() {
                     "on" | "1" | "true" => true,

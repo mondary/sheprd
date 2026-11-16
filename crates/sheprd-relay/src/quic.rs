@@ -18,8 +18,8 @@ use crate::{
     metrics::{Kind, Listen, Offense, Refused},
     splice::{Peer, splice},
     wire::{
-        self, EXPORTER_LABEL, EXPORTER_LEN, INCOMING, INCOMING_WEB, MAX_MESSAGE, MAX_REQUEST,
-        Message, Parse, Request, Status,
+        self, EXPORTER_LABEL, EXPORTER_LEN, INCOMING, INCOMING_WEB, MAX_CHAIN, MAX_MESSAGE,
+        MAX_REQUEST, Message, Parse, Request, Status,
     },
 };
 use quinn::{Connection, Endpoint, RecvStream, SendStream, ServerConfig, TransportConfig, VarInt};
@@ -218,6 +218,36 @@ async fn stream(
                 Err(status) => reply_and_end(&mut send, status).await,
             }
         }
+        Request::Certificate {
+            csr,
+            key,
+            signature,
+        } => {
+            let signed = wire::certificate_signed(&exported);
+            let proof = (&key, &signature[..], &signed[..]);
+            match broker::certificate(&hub, address, proof, &csr).await {
+                Ok(chain) => send_chain(&mut send, &chain).await,
+                Err(status) => reply_and_end(&mut send, status).await,
+            }
+        }
+    }
+}
+
+/// Answers a certificate request with `Ok`, the chain's length, and the
+/// chain, then finishes the stream.
+async fn send_chain(send: &mut SendStream, chain: &str) {
+    let Some(length) = u32::try_from(chain.len())
+        .ok()
+        .filter(|_| chain.len() <= MAX_CHAIN)
+    else {
+        return reply_and_end(send, Status::Failed).await;
+    };
+    if !reply(send, Status::Ok).await {
+        return;
+    }
+    let body = [&length.to_be_bytes()[..], chain.as_bytes()].concat();
+    if send.write_all(&body).await.is_ok() {
+        let _ = send.finish();
     }
 }
 

@@ -5,6 +5,7 @@ pub(crate) mod capped;
 
 use crate::{
     Error, Options, Result,
+    acme::{self, Issuer},
     dashboard::{
         self,
         auth::Account,
@@ -46,8 +47,11 @@ const MIN_TOKEN: usize = 16;
 /// The relay's HTTP routes and, with a token, the dashboard. `quic` is
 /// what `/v1/info` says about QUIC.
 pub fn app(options: &Options, quic: Option<QuicInfo>) -> Result<(Router, Arc<Hub>)> {
-    let hub =
-        Arc::new(Hub::new(options.limits, access(options)?).with_web(options.front.is_some()));
+    let mut hub = Hub::new(options.limits, access(options)?).with_web(options.front.is_some());
+    if let Some(issuer) = issuer(options, &hub) {
+        hub = hub.with_issuer(issuer);
+    }
+    let hub = Arc::new(hub);
     let shared = Shared {
         hub: Arc::clone(&hub),
         public_host: options.public_host.as_deref().map(Arc::from),
@@ -67,6 +71,24 @@ pub fn app(options: &Options, quic: Option<QuicInfo>) -> Result<(Router, Arc<Hub
         web::refuse_banned,
     ));
     Ok((router, hub))
+}
+
+/// What orders computers' web certificates: only with `--acme-dir`, on a
+/// relay that offers web access under a host name.
+fn issuer(options: &Options, hub: &Hub) -> Option<Arc<Issuer>> {
+    let dir = options.acme_dir.clone()?;
+    let relay_host = options.public_host.as_deref().and_then(front::relay_host);
+    let Some(relay_host) = relay_host.filter(|_| hub.offers_web()) else {
+        tracing::info!("--acme-dir is set, but the relay offers no web access: no certificates");
+        return None;
+    };
+    let settings = acme::Settings {
+        directory: options.acme_directory.clone(),
+        dir,
+        root: options.acme_root.clone(),
+        weekly: options.acme_weekly,
+    };
+    Some(Arc::new(Issuer::new(settings, Arc::from(relay_host))))
 }
 
 /// Where callers' addresses come from, for per-address limits.

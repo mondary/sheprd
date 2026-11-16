@@ -3,6 +3,9 @@ use std::{ffi::OsString, io, net::SocketAddr, path::PathBuf};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // keep-sorted start
+    #[cfg(feature = "server")]
+    #[error(transparent)]
+    Acme(#[from] crate::acme::Error),
     #[error("{argument:?} is not a valid argument")]
     Argument { argument: OsString },
     #[error("could not listen on {address}")]

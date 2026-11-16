@@ -9,10 +9,15 @@
 //! | --- | --- |
 //! | Listen | `0x01`, key (33), signature (64), token length (1), token (0–255) |
 //! | Dial | `0x02`, route (32), dial key (33), signature (64) |
+//! | Certificate | `0x03`, key (33), signature (64), CSR length (2, big-endian, at most [`MAX_CSR`]), CSR (DER) |
 //!
 //! Keys are SEC1 compressed P-256, signatures `r ‖ s`. The relay answers
 //! with one [`Status`] byte. After `Ok` on a dial, the stream is the
-//! session.
+//! session. After `Ok` on a certificate request, the relay sends the PEM
+//! chain's length (4, big-endian, at most [`MAX_CHAIN`]) and the chain,
+//! then finishes the stream. A certificate request proves the route's key
+//! as a listen does, and is for a route listening with web access on: the
+//! CSR must name only its web name (`docs/relay-web-plan.md`).
 //!
 //! **Who may dial.** A listener names the keys allowed to dial it, on its
 //! listen stream, which stays open for as long as it listens:
@@ -63,6 +68,13 @@ pub const EXPORTER_LEN: usize = 32;
 pub const LISTEN_CONTEXT: &[u8] = b"sheprd-relay/listen/quic/v1\0";
 /// What a dialer signs ahead of the exported bytes and the route.
 pub const DIAL_CONTEXT: &[u8] = b"sheprd-relay/dial/quic/v1\0";
+/// What a listener signs ahead of the exported bytes to ask for its web
+/// name's certificate.
+pub const CERTIFICATE_CONTEXT: &[u8] = b"sheprd-relay/certificate/quic/v1\0";
+/// The largest CSR a certificate request carries.
+pub const MAX_CSR: usize = 2048;
+/// The largest PEM chain the relay returns.
+pub const MAX_CHAIN: usize = 16 * 1024;
 /// The first byte of a stream the relay opens to a listener.
 pub const INCOMING: u8 = 0x10;
 /// The first byte of a stream the relay opens to a listener for a
@@ -80,14 +92,16 @@ pub type Signature = [u8; SIGNATURE_LEN];
 
 const LISTEN: u8 = 0x01;
 const DIAL: u8 = 0x02;
+const CERTIFICATE: u8 = 0x03;
 const DIAL_KEYS: u8 = 0x20;
 const PAIRING_KEY: u8 = 0x21;
 const WEB: u8 = 0x22;
 pub const KEY_LEN: usize = 33;
 pub const SIGNATURE_LEN: usize = 64;
 const DIAL_LEN: usize = 1 + 32 + KEY_LEN + SIGNATURE_LEN;
-/// The longest request: a listen with a 255-byte token.
-pub const MAX_REQUEST: usize = 1 + KEY_LEN + SIGNATURE_LEN + 1 + 255;
+const CERTIFICATE_HEADER: usize = 1 + KEY_LEN + SIGNATURE_LEN + 2;
+/// The longest request: a certificate request with the largest CSR.
+pub const MAX_REQUEST: usize = CERTIFICATE_HEADER + MAX_CSR;
 /// The longest listener message: a full set of dial keys.
 pub const MAX_MESSAGE: usize = 2 + KEY_LEN * MAX_DIAL_KEYS;
 
@@ -104,6 +118,12 @@ pub enum Request {
     Dial {
         key: Key,
         route: RouteId,
+        signature: Signature,
+    },
+    /// A certificate for the web name of `key`'s route, for `csr` (DER).
+    Certificate {
+        csr: Vec<u8>,
+        key: Key,
         signature: Signature,
     },
 }
@@ -132,6 +152,8 @@ pub enum Malformed {
     Switch,
     /// A token longer than 255 bytes cannot be encoded.
     Token,
+    /// A CSR longer than [`MAX_CSR`], or empty.
+    Csr,
 }
 
 /// How far a buffer gets toward a whole request or message.
@@ -179,6 +201,23 @@ impl Request {
                 bytes.extend_from_slice(signature);
                 Ok(bytes)
             }
+            Self::Certificate {
+                csr,
+                key,
+                signature,
+            } => {
+                if csr.is_empty() || csr.len() > MAX_CSR {
+                    return Err(Malformed::Csr);
+                }
+                let length = u16::try_from(csr.len()).map_err(|_| Malformed::Csr)?;
+                let mut bytes = Vec::with_capacity(CERTIFICATE_HEADER + csr.len());
+                bytes.push(CERTIFICATE);
+                bytes.extend_from_slice(key);
+                bytes.extend_from_slice(signature);
+                bytes.extend_from_slice(&length.to_be_bytes());
+                bytes.extend_from_slice(csr);
+                Ok(bytes)
+            }
         }
     }
 
@@ -218,6 +257,27 @@ impl Request {
                         key: array(&bytes[1..=KEY_LEN]),
                         signature: array(&bytes[1 + KEY_LEN..header - 1]),
                         token: token.to_vec(),
+                    },
+                    total,
+                ))
+            }
+            CERTIFICATE => {
+                let Some(length) = bytes.get(CERTIFICATE_HEADER - 2..CERTIFICATE_HEADER) else {
+                    return Ok(Parse::Need(CERTIFICATE_HEADER));
+                };
+                let length = usize::from(u16::from_be_bytes([length[0], length[1]]));
+                if length == 0 || length > MAX_CSR {
+                    return Err(Malformed::Csr);
+                }
+                let total = CERTIFICATE_HEADER + length;
+                let Some(csr) = bytes.get(CERTIFICATE_HEADER..total) else {
+                    return Ok(Parse::Need(total));
+                };
+                Ok(Parse::Done(
+                    Self::Certificate {
+                        csr: csr.to_vec(),
+                        key: array(&bytes[1..=KEY_LEN]),
+                        signature: array(&bytes[1 + KEY_LEN..CERTIFICATE_HEADER - 2]),
                     },
                     total,
                 ))
@@ -330,6 +390,8 @@ pub enum Status {
     Malformed = 8,
     /// More pairing keys at once than allowed.
     TooMany = 9,
+    /// The certificate could not be issued: the CA refused or failed.
+    Failed = 10,
 }
 
 impl Status {
@@ -346,6 +408,7 @@ impl Status {
             7 => Self::Full,
             8 => Self::Malformed,
             9 => Self::TooMany,
+            10 => Self::Failed,
             _ => return None,
         })
     }
@@ -379,6 +442,13 @@ pub mod code {
 #[must_use]
 pub fn listen_signed(exported: &[u8; EXPORTER_LEN]) -> Vec<u8> {
     [LISTEN_CONTEXT, exported].concat()
+}
+
+/// The bytes a listener signs to ask for its web name's certificate, on a
+/// connection whose TLS exporter gave `exported`.
+#[must_use]
+pub fn certificate_signed(exported: &[u8; EXPORTER_LEN]) -> Vec<u8> {
+    [CERTIFICATE_CONTEXT, exported].concat()
 }
 
 /// The bytes a dialer signs to reach `route`, on a connection whose TLS
