@@ -46,8 +46,9 @@
 //! **Web access** (`docs/relay-web-plan.md`). A listener that turns it on
 //! is reachable by browsers at its web name through the relay's TCP
 //! front. Each browser connection arrives as a stream starting with
-//! [`INCOMING_WEB`] alone, then the browser's TLS bytes, starting with its
-//! ClientHello: the computer ends TLS itself and authenticates the
+//! [`INCOMING_WEB`] and the browser's address (16, IPv6, an IPv4 address
+//! in its mapped form), for the computer's own limits and logs, then the
+//! browser's TLS bytes, starting with its ClientHello: the computer ends TLS itself and authenticates the
 //! browser, since no dial key is involved. Turning it off ends those
 //! sessions.
 //!
@@ -442,6 +443,15 @@ pub mod code {
 #[must_use]
 pub fn listen_signed(exported: &[u8; EXPORTER_LEN]) -> Vec<u8> {
     [LISTEN_CONTEXT, exported].concat()
+}
+
+/// A browser's address as an [`INCOMING_WEB`] header carries it.
+#[must_use]
+pub fn web_address(address: std::net::IpAddr) -> [u8; 16] {
+    match address {
+        std::net::IpAddr::V4(address) => address.to_ipv6_mapped().octets(),
+        std::net::IpAddr::V6(address) => address.octets(),
+    }
 }
 
 /// The bytes a listener signs to ask for its web name's certificate, on a

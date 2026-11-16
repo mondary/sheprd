@@ -119,7 +119,7 @@ impl State {
     fn end_web_sessions(&self, route: &RouteId) {
         let ids = self.on_route.get(route).into_iter().flatten();
         for live in ids.filter_map(|id| self.sessions.get(id)) {
-            if live.caller == Caller::Web {
+            if matches!(live.caller, Caller::Web(_)) {
                 live.revoke.notify_one();
             }
         }
@@ -158,9 +158,10 @@ pub enum Caller {
     /// A device, by the dial key it proved; `pairing` when that key was a
     /// one-dial pairing key.
     Device { key: Key, pairing: bool },
-    /// A browser at the listener's web name. No key is involved: the
-    /// computer ends its TLS and authenticates it.
-    Web,
+    /// A browser at the listener's web name, from `IpAddr`. No key is
+    /// involved: the computer ends its TLS and authenticates it, and keys
+    /// its own limits by the address.
+    Web(IpAddr),
 }
 
 impl Caller {
@@ -659,7 +660,7 @@ impl Hub {
             Caller::Device { key, .. } => {
                 listener.is_some_and(|listener| listener.dial_keys.contains(&key))
             }
-            Caller::Web => listener.is_some_and(|listener| listener.web),
+            Caller::Web(_) => listener.is_some_and(|listener| listener.web),
         };
         if !allowed {
             return None;
@@ -822,7 +823,7 @@ impl Hub {
                 pairing: live.caller.pairing(),
                 route: live.route.short(),
                 seconds: live.started.elapsed().as_secs(),
-                web: live.caller == Caller::Web,
+                web: matches!(live.caller, Caller::Web(_)),
             })
             .collect();
         drop(state);

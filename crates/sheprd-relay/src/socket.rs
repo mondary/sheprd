@@ -16,7 +16,7 @@
 //!    `{"t":"pairing_key","key","seconds"}`, or `{"t":"web","enabled"}`;
 //!    relay: `{"t":"status","status"}`.
 //! 5. Relay, per dial: `{"t":"incoming","session","key"}`, or, per browser
-//!    connection to its web name, `{"t":"incoming_web","session"}`; the
+//!    connection to its web name, `{"t":"incoming_web","from","session"}`; the
 //!    listener opens `GET /v1/accept/{session}`.
 //!
 //! Dialer, on `GET /v1/dial/{route}`:
@@ -50,9 +50,9 @@ pub enum ToPeer {
     Challenge { nonce: String, version: u8 },
     /// A dialer waits: open `/v1/accept/{session}`. `key` is the dialer's.
     Incoming { key: String, session: String },
-    /// A browser reached the listener's web name: open
+    /// A browser at `from` reached the listener's web name: open
     /// `/v1/accept/{session}`, whose binary frames carry its TLS.
-    IncomingWeb { session: String },
+    IncomingWeb { from: String, session: String },
     /// Listening on `route`.
     Ready { route: String },
     /// The answer to a dial or a listener's message.

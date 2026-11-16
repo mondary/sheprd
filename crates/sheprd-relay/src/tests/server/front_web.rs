@@ -65,7 +65,7 @@ async fn accept_web(hub: &Arc<Hub>, registration: &mut Registration) -> TcpStrea
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(incoming.caller, Caller::Web);
+    assert!(matches!(incoming.caller, Caller::Web(_)));
     let sender = hub.accept(incoming.session).unwrap();
     // The computer's side, as a TCP peer the splice carries.
     let mut side = Capped::new(

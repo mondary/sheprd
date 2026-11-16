@@ -135,11 +135,13 @@ pub struct Incoming {
     pub send: SendStream,
 }
 
-/// A browser's connection to the computer's web name: its TLS bytes,
-/// starting with the ClientHello, which the computer ends itself and
-/// authenticates (`docs/relay-web-plan.md`).
+/// A browser's connection to the computer's web name: its address, as
+/// the relay tells it, and its TLS bytes, starting with the ClientHello,
+/// which the computer ends itself and authenticates
+/// (`docs/relay-web-plan.md`).
 #[derive(Debug)]
 pub struct WebStream {
+    pub from: std::net::IpAddr,
     pub recv: RecvStream,
     pub send: SendStream,
 }
@@ -187,10 +189,15 @@ impl Pending {
                     send: self.send,
                 }))
             }
-            INCOMING_WEB => Ok(Arrival::Web(WebStream {
-                recv: self.recv,
-                send: self.send,
-            })),
+            INCOMING_WEB => {
+                let mut address = [0; 16];
+                self.recv.read_exact(&mut address).await?;
+                Ok(Arrival::Web(WebStream {
+                    from: std::net::Ipv6Addr::from(address).to_canonical(),
+                    recv: self.recv,
+                    send: self.send,
+                }))
+            }
             _ => Err(Error::Malformed),
         }
     }

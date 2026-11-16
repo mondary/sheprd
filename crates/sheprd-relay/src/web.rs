@@ -296,7 +296,10 @@ async fn serve_listener(mut socket: WebSocket, hub: Arc<Hub>, address: IpAddr, h
                         key: URL_SAFE_NO_PAD.encode(key),
                         session,
                     },
-                    Caller::Web => ToPeer::IncomingWeb { session },
+                    Caller::Web(from) => ToPeer::IncomingWeb {
+                        from: from.to_canonical().to_string(),
+                        session,
+                    },
                 };
                 if !send_within(&mut socket, &message, silence).await {
                     return;

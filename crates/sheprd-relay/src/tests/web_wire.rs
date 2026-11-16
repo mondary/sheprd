@@ -21,10 +21,11 @@ fn the_switch_and_web_dials_read_on_websockets() {
     let message: FromListener = serde_json::from_str(r#"{"t":"web","enabled":true}"#).unwrap();
     assert_eq!(message.decode(), Some(Message::Web(true)));
     let incoming = ToPeer::IncomingWeb {
+        from: "203.0.113.7".into(),
         session: "abc".into(),
     };
     assert_eq!(
         serde_json::to_string(&incoming).unwrap(),
-        r#"{"t":"incoming_web","session":"abc"}"#
+        r#"{"t":"incoming_web","from":"203.0.113.7","session":"abc"}"#
     );
 }

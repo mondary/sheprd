@@ -189,7 +189,7 @@ impl Drop for Slot {
         state.dialers.remove(self.dialer);
         match self.caller {
             Caller::Device { key, .. } => state.keys.remove(&key),
-            Caller::Web => state.web_routes.remove(&self.route),
+            Caller::Web(_) => state.web_routes.remove(&self.route),
         }
         if let Some(held) = state.routes.get_mut(&self.route) {
             *held = held.saturating_sub(1);

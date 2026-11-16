@@ -168,9 +168,10 @@ sessions, refusals, and bytes without names.
   private, or no front) answers `forbidden`. Turning it off, or a new
   listener on the route, ends its browser sessions.
 - The relay announces each browser connection without a dial key: over
-  QUIC, a stream it opens to the listener starting with the single byte
-  `INCOMING_WEB` (`0x11`) instead of `INCOMING` and a key; over the
-  WebSocket fallback, `{"t":"incoming_web","session"}`, which the listener
+  QUIC, a stream it opens to the listener starting with the byte
+  `INCOMING_WEB` (`0x11`) and the browser's address (16 bytes, IPv6 or
+  IPv4-mapped) instead of `INCOMING` and a key; over the WebSocket
+  fallback, `{"t":"incoming_web","from","session"}`, which the listener
   accepts at `/v1/accept/{session}` as any dial. Either way, what follows
   is the browser's raw TLS, starting with its ClientHello.
 - Dial-key checks do not apply to web sessions: the computer authenticates

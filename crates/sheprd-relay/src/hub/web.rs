@@ -79,7 +79,7 @@ impl Hub {
         if state.web_routes.get(&route) >= self.limits.max_web_sessions_per_route {
             return Ok(Err(DialRefusal::Busy));
         }
-        let waiting = self.wait(&mut state, route, Caller::Web, dialer, session)?;
+        let waiting = self.wait(&mut state, route, Caller::Web(dialer), dialer, session)?;
         if waiting.is_ok() {
             state.web_routes.add(route);
         }
