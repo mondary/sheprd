@@ -46,6 +46,8 @@ pub enum Error {
         #[source]
         source: crate::relay_label::Error,
     },
+    #[error("remote.relays gives {relay} a token_file that is not an absolute UTF-8 path")]
+    RelayTokenFile { relay: String },
     #[error("{program} failed ({status}): {stderr}")]
     Service {
         program: &'static str,

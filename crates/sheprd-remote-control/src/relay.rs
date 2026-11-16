@@ -20,12 +20,14 @@
 //! trip and `GET /api/relay` lists them nearest first, with those times,
 //! and the phone adds its own leg to each before choosing (`nearest`).
 
+mod access;
 mod error;
 pub(crate) mod keys;
 mod listen;
 mod nearest;
 mod serve;
 pub mod shared;
+pub(crate) mod web;
 
 pub use error::Error;
 pub(crate) use error::Result;
@@ -86,6 +88,8 @@ pub(crate) fn refresh_offer(relays: Option<&Relays>, auth: &mut crate::auth::Aut
 /// The relays this computer listens on, and what it listens with.
 #[derive(Debug)]
 pub(crate) struct Relays {
+    /// Each configured relay's listen token and web switch, by endpoint.
+    access: BTreeMap<String, access::Access>,
     /// Bumped whenever a device's relay keys change, so each listener
     /// names them again.
     changed: watch::Sender<u64>,
@@ -104,8 +108,16 @@ pub(crate) struct Relays {
     /// What other computers shared, and the file that keeps it.
     shared: Mutex<control::relays::Shared>,
     shared_file: PathBuf,
+    /// Where the relay keys and web certificates are kept.
+    state_dir: PathBuf,
     /// Each relay's state, for `sheprd remote status`.
     status: Mutex<BTreeMap<String, Status>>,
+    /// What browsers are served with, by endpoint, once a relay's web
+    /// certificate is good.
+    web: Mutex<BTreeMap<String, web::Serving>>,
+    /// The roots a web certificate must chain to: the public ones, but a
+    /// test's own CA in tests.
+    web_roots: rustls::RootCertStore,
 }
 
 /// The listeners running, once [`Relays::start`] said what they serve.
@@ -164,7 +176,9 @@ impl Relays {
             .filter(|relay| !relay.label.is_empty())
             .map(|relay| (relay.endpoint.to_string(), relay.label.clone()))
             .collect();
+        let access = access::load(&relays)?;
         Ok(Self {
+            access,
             changed: watch::Sender::new(0),
             configured: relays.into_iter().map(|relay| relay.endpoint).collect(),
             keys: keys::Keys::load_or_create(state_dir)?,
@@ -175,8 +189,60 @@ impl Relays {
             running: Mutex::default(),
             shared: Mutex::new(shared::load(&shared_file)),
             shared_file,
+            state_dir: state_dir.to_owned(),
             status: Mutex::default(),
+            web: Mutex::default(),
+            web_roots: web::public_roots(),
         })
+    }
+
+    /// The listen token `endpoint` asks for: empty for a public relay, and
+    /// for one another computer shared.
+    pub(crate) fn token(&self, endpoint: &Endpoint) -> access::Token {
+        self.access
+            .get(&endpoint.to_string())
+            .map(|access| access.token.clone())
+            .unwrap_or_default()
+    }
+
+    /// Trusts `roots` for web certificates instead of the public ones.
+    #[cfg(test)]
+    pub(crate) fn trust_web_roots(&mut self, roots: rustls::RootCertStore) {
+        self.web_roots = roots;
+    }
+
+    /// Whether browsers should reach this computer through `endpoint`.
+    pub(crate) fn wants_web(&self, endpoint: &Endpoint) -> bool {
+        self.access
+            .get(&endpoint.to_string())
+            .is_some_and(|access| access.web)
+    }
+
+    /// Serves browsers on `endpoint` with `serving` from now on.
+    pub(crate) fn serve_web(&self, endpoint: &Endpoint, serving: web::Serving) {
+        self.web
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(endpoint.to_string(), serving);
+    }
+
+    /// What browsers on `endpoint` are served with, once its certificate
+    /// is good.
+    pub(crate) fn web_serving(&self, endpoint: &Endpoint) -> Option<web::Serving> {
+        self.web
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&endpoint.to_string())
+            .cloned()
+    }
+
+    /// Whether `origin` is one of this computer's web names.
+    pub(crate) fn serves_web_origin(&self, origin: &str) -> bool {
+        self.web
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .any(|serving| serving.origin.eq_ignore_ascii_case(origin))
     }
 
     /// Every relay to listen on: the configured ones, then the shared ones

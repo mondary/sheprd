@@ -20,8 +20,8 @@ fn labelled(dir: &Path) -> Relays {
         vec![
             sfo3.into(),
             Relay {
-                endpoint: fra3_endpoint,
                 label: fra3(),
+                ..fra3_endpoint.into()
             },
         ],
     )

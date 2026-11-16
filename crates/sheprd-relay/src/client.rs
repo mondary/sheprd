@@ -13,10 +13,12 @@ use crate::{
     },
 };
 use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
-use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
+use quinn::{ClientConfig, Endpoint, RecvStream, SendStream};
 use std::{net::SocketAddr, sync::Arc};
 
 mod reach;
+/// The QUIC connection a listener holds, for work beside it.
+pub use quinn::Connection;
 pub use reach::{first_reachable, reach};
 
 /// Why reaching a relay, or a step on it, failed.
@@ -254,28 +256,16 @@ impl Listener {
         self.message(Message::Web(on)).await
     }
 
-    /// Asks the relay for the web name's certificate, for `csr` (DER), with
-    /// the route's own `key`: the PEM chain. Web access must be on. Takes
-    /// as long as the CA does, up to a few minutes.
+    /// Asks the relay for the web name's certificate: see [`certificate`].
     pub async fn certificate(&self, key: &SigningKey, csr: &[u8]) -> Result<String> {
-        let request = Request::Certificate {
-            csr: csr.to_vec(),
-            key: public(key),
-            signature: sign(key, &wire::certificate_signed(&exported(&self.connection)?)),
-        };
-        let (mut send, mut recv) = self.connection.open_bi().await?;
-        send.write_all(&request.encode().map_err(|_| Error::Malformed)?)
-            .await?;
-        expect_ok(&mut recv).await?;
-        let mut length = [0; 4];
-        recv.read_exact(&mut length).await?;
-        let length = usize::try_from(u32::from_be_bytes(length)).map_err(|_| Error::Malformed)?;
-        if length > MAX_CHAIN {
-            return Err(Error::Malformed);
-        }
-        let mut chain = vec![0; length];
-        recv.read_exact(&mut chain).await?;
-        String::from_utf8(chain).map_err(|_| Error::Malformed)
+        certificate(&self.connection, key, csr).await
+    }
+
+    /// The connection this listener holds, for work beside it, such as a
+    /// certificate request that may take minutes.
+    #[must_use]
+    pub fn connection(&self) -> &Connection {
+        &self.connection
     }
 
     /// The next dial: a stream the relay opened on this connection, its
@@ -319,6 +309,31 @@ impl Listener {
             },
         }
     }
+}
+
+/// Asks the relay over `connection` for the web name's certificate, for
+/// `csr` (DER), proved with the route's own `key`: the PEM chain. The
+/// route must be listening with web access on. Takes as long as the CA
+/// does, up to a few minutes.
+pub async fn certificate(connection: &Connection, key: &SigningKey, csr: &[u8]) -> Result<String> {
+    let request = Request::Certificate {
+        csr: csr.to_vec(),
+        key: public(key),
+        signature: sign(key, &wire::certificate_signed(&exported(connection)?)),
+    };
+    let (mut send, mut recv) = connection.open_bi().await?;
+    send.write_all(&request.encode().map_err(|_| Error::Malformed)?)
+        .await?;
+    expect_ok(&mut recv).await?;
+    let mut length = [0; 4];
+    recv.read_exact(&mut length).await?;
+    let length = usize::try_from(u32::from_be_bytes(length)).map_err(|_| Error::Malformed)?;
+    if length > MAX_CHAIN {
+        return Err(Error::Malformed);
+    }
+    let mut chain = vec![0; length];
+    recv.read_exact(&mut chain).await?;
+    String::from_utf8(chain).map_err(|_| Error::Malformed)
 }
 
 /// Dials `route` as `key` over `connection`: the session's two halves once

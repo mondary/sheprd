@@ -49,6 +49,30 @@ pub struct Config {
     pub upstream: Option<Arc<str>>,
 }
 
+/// Serves the front on `listener`, bounded by `hub`'s limits as the
+/// relay's own HTTP listener is, until the returned task is dropped or
+/// aborted.
+pub fn spawn(
+    listener: tokio::net::TcpListener,
+    hub: Arc<Hub>,
+    config: Config,
+) -> tokio::task::JoinHandle<()> {
+    let limits = hub.limits;
+    let capped = Capped::new(
+        listener,
+        limits
+            .max_connections
+            .saturating_add(crate::serve::HTTP_HEADROOM),
+        Some(
+            limits
+                .max_connections_per_ip
+                .saturating_add(crate::serve::HTTP_HEADROOM_PER_CALLER),
+        ),
+        limits.idle_timeout,
+    );
+    tokio::spawn(run(capped, hub, config))
+}
+
 /// Accepts connections until the task is dropped.
 pub async fn run(mut listener: Capped, hub: Arc<Hub>, config: Config) {
     loop {

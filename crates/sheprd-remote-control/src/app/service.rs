@@ -107,6 +107,12 @@ impl Plan {
             for (option, value) in relay.label.args() {
                 args.extend([option.into(), value.into()]);
             }
+            if let Some(path) = &relay.token_file {
+                args.extend(["--relay-token-file".into(), path.clone().into()]);
+            }
+            if relay.web {
+                args.push("--relay-web".into());
+            }
         }
         if let Some(socket) = &self.herdr_socket {
             args.extend(["--herdr-socket".into(), socket.clone().into()]);

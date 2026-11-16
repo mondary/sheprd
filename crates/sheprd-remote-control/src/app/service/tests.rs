@@ -99,6 +99,8 @@ fn the_daemon_runs_with_every_setting_as_an_argument() {
                     name: Some("fra3".into()),
                     tags: vec!["eu".into()],
                 },
+                token_file: Some("/etc/sheprd/fra3.token".into()),
+                web: true,
             },
         ],
     };
@@ -130,6 +132,9 @@ fn the_daemon_runs_with_every_setting_as_an_argument() {
             "not for public use",
             "--relay-tag",
             "eu",
+            "--relay-token-file",
+            "/etc/sheprd/fra3.token",
+            "--relay-web",
         ]
     );
 }

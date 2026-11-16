@@ -13,7 +13,7 @@ mod serve;
 
 pub use error::Error;
 pub use hello::ClientHello;
-pub use serve::{Config, run};
+pub use serve::{Config, run, spawn};
 
 use crate::WebLabel;
 

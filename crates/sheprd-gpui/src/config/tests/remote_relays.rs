@@ -22,6 +22,7 @@ fn a_relay_is_an_address_or_a_labelled_table() -> anyhow::Result<()> {
                     name: Some("fra3".into()),
                     tags: vec!["eu".into(), "private".into()],
                 },
+                ..Relay::default()
             },
             Relay {
                 endpoint: "https://ams3.example.org".into(),
@@ -29,6 +30,7 @@ fn a_relay_is_an_address_or_a_labelled_table() -> anyhow::Result<()> {
                     name: Some("ams3".into()),
                     ..RelayLabel::default()
                 },
+                ..Relay::default()
             },
         ]
     );
@@ -79,6 +81,7 @@ fn saving_the_list_from_settings_keeps_each_label() -> anyhow::Result<()> {
             name: Some("fra3".into()),
             tags: vec!["eu".into(), "private".into()],
         },
+        ..Relay::default()
     };
     Config::save_preference_path(
         Preference::Remote(Edit::Relays(vec![
@@ -126,6 +129,7 @@ fn a_relay_named_twice_keeps_its_place_and_the_label_the_daemon_uses() -> anyhow
             name: Some(name.into()),
             ..RelayLabel::default()
         },
+        ..Relay::default()
     };
     // Plain first, then labelled, then plain again, as a hand-edited list
     // may name it: the label survives, as the daemon would read it.

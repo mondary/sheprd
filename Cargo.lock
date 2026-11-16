@@ -11515,6 +11515,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "webpki-roots",
  "x509-parser",
 ]
 

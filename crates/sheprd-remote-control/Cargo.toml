@@ -46,6 +46,7 @@ server = [
     "dep:tokio-rustls",
     "dep:tracing-subscriber",
     "dep:ureq",
+    "dep:webpki-roots",
     "dep:x509-parser",
 ]
 
@@ -113,6 +114,8 @@ tokio-rustls   = { optional = true, workspace = true }
 # The daemon log: requests, refused handshakes, and errors phones report.
 tracing-subscriber = { features = ["fmt"], optional = true, workspace = true }
 ureq           = { optional = true, workspace = true }
+# The public roots a relay-issued web certificate must chain to.
+webpki-roots   = { optional = true, workspace = true }
 x509-parser    = { optional = true, workspace = true }
 
 # The host name for the CA's name and `HOSTNAME.local`.

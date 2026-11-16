@@ -27,6 +27,7 @@ use tokio::{
 mod labels;
 mod nearest;
 mod shared;
+mod web;
 
 /// A relay serving QUIC and HTTP on loopback ports: its HTTP address, and
 /// its QUIC address and pin.

@@ -12,6 +12,7 @@ mod server;
 #[cfg(feature = "signed-directory")]
 mod signed_directory;
 mod socket;
+mod web_host;
 mod web_label;
 mod web_wire;
 mod wire;

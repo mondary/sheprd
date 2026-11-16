@@ -470,6 +470,20 @@ relays = "default"   # Sheprd's relays (the default). Or one of:
   are at most 64 characters, descriptions 256, and tags 32, with at most 8
   tags, none blank or with a control character; a misspelt key is an
   error rather than a dropped label.
+- A private relay's table also names the file holding its operator's
+  listen token, an absolute path so the token stays out of the config and
+  the service definition, and may turn on web access to the phone app
+  through it (`docs/relay-web-plan.md`):
+
+  ```toml
+  relays = [
+    { endpoint = "https://fra1.sheprd-relay.dev",
+      token_file = "/Users/me/.config/sheprd/fra1.token", web = true },
+  ]
+  ```
+
+  Sheprd passes them as `--relay-token-file` and `--relay-web`. The daemon
+  reads the token at start and presents it when it listens.
 
 **The phone.** Pairing (QR, Nearby, Bonjour) carries the computer's
 endpoints, and every connection refreshes them, so editing the list on the

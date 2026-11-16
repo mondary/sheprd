@@ -234,22 +234,31 @@ sessions, refusals, and bytes without names.
 
 ## Daemon (`crates/sheprd-remote-control`)
 
-- **Key and CSR** (`relay/web/certificate.rs`): a P-256 key per relay with web
-  access, stored 0600 beside the relay key, a CSR for the computer's label,
-  and the returned chain checked before use:
+- **Private relays** (`relay/access.rs`, built): `[remote] relays` entries
+  name their listen token's file (`token_file`) and turn on web access
+  (`web = true`); the daemon presents the token when it listens, then
+  turns web access on. A relay that refuses (a public one) keeps serving
+  devices as before.
+- **Key and CSR** (`relay/web.rs`, built): a P-256 key per relay with web
+  access, kept 0600 with its chain in `STATE_DIR/relay/web/<hash>/`, and a
+  CSR for the computer's web name, sent over the listener's connection.
+  Renewal keeps the key and runs at two-thirds of the certificate's life;
+  a failure waits ten minutes, doubling to six hours. The returned chain is
+  checked before use (`relay/web/check.rs`):
   - the leaf's public key is this computer's own;
-  - the only name is the one it asked for;
-  - it chains to the web PKI roots (`webpki-roots`), is valid now, and has
-    the serverAuth EKU.
+  - it chains to the public roots (`webpki-roots`) for exactly the web
+    name, and is valid now.
 
-  Anything else is discarded and logged as the relay misbehaving.
-- **Serving** (`relay/web.rs`): each web session runs a rustls server with that
-  certificate, then the existing router through `serve_connection`, as relay
-  sessions already do. The TLS resolver chooses by SNI: the relay name gets
-  the public certificate; LAN and Tailscale keep the own-CA certificate.
-- **Origins**: the relay origin is added as a home origin. Browsers block a
-  public origin from reaching private addresses (Private Network Access),
-  so an app installed from the relay talks only to the relay, also at home.
+  Anything else is discarded and logged.
+- **Serving** (`relay/serve.rs`, built): each browser stream runs a rustls
+  server with that certificate, then the existing router through
+  `serve_connection`, as device sessions do; rate limits and logs key it
+  by the address the relay reported. Until a certificate is good, browsers
+  are closed. LAN and Tailscale keep the own-CA certificate.
+- **Origins** (built): the web name's origin counts as this computer's own
+  once it is served. Browsers block a public origin from reaching private
+  addresses (Private Network Access), so an app installed from the relay
+  talks only to the relay, also at home.
 - **Pairing on the web origin**: the QR opens
   `https://<id>.fra1.sheprd-relay.dev/pair#…` with the pairing secret in
   the fragment, so no server logs it. No CA profile to install. Dual approval

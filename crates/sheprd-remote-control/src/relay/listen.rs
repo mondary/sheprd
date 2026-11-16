@@ -6,7 +6,7 @@ use super::{Error, Relays, Result, Served, Status, serve};
 use crate::web::Shared;
 use sheprd_relay::{
     Endpoint,
-    client::{self, Listener},
+    client::{self, Arrival, Listener},
     wire::Key,
 };
 use std::{sync::Arc, time::Duration};
@@ -75,12 +75,23 @@ async fn session(
 ) -> Result<()> {
     let state = &served.state;
     let connection = client::reach(endpoint).await?;
-    let mut listener = Listener::listen(connection, &relays.keys.route, b"").await?;
+    let token = relays.token(endpoint);
+    let mut listener = Listener::listen(connection, &relays.keys.route, token.as_bytes()).await?;
     let mut changed = relays.changed.subscribe();
     let mut pairing = relays.pairing_changed.subscribe();
     let mut revoked = state.auth().watch_revocations();
     listener.set_dial_keys(dial_keys(state)).await?;
     add_pairing(relays, &mut listener).await;
+    // Browsers too, when asked: the certificate is kept current beside
+    // the listener, and ends with its connection.
+    let _renewing =
+        (relays.wants_web(endpoint) && enable_web(endpoint, &mut listener).await).then(|| {
+            Aborting(tokio::spawn(super::web::renew(
+                Arc::clone(relays),
+                endpoint.clone(),
+                listener.connection().clone(),
+            )))
+        });
     // The round trip first, so whoever sees `Listening` sees it too.
     relays.set_rtt(endpoint, Some(listener.rtt()));
     relays.set_status(endpoint, Status::Listening { rtt_ms: None });
@@ -98,9 +109,15 @@ async fn session(
                 let relays = Arc::clone(relays);
                 let route = listener.route();
                 let served = served.clone();
+                let endpoint = endpoint.clone();
                 tokio::spawn(async move {
-                    match pending.incoming().await {
-                        Ok(incoming) => serve::session(relays, incoming, route, served).await,
+                    match pending.arrival().await {
+                        Ok(Arrival::Device(incoming)) => {
+                            serve::session(relays, incoming, route, served).await;
+                        }
+                        Ok(Arrival::Web(stream)) => {
+                            serve::web_session(&relays, stream, &endpoint, served).await;
+                        }
                         Err(error) => tracing::debug!(error = %error, "a relay dial ended before its header"),
                     }
                 });
@@ -111,6 +128,27 @@ async fn session(
             _ = measure.tick() => relays.set_rtt(endpoint, Some(listener.rtt())),
             error = listener.closed() => return Err(Error::Client(error)),
         }
+    }
+}
+
+/// Turns web access on; a relay that offers none (a public one) leaves
+/// listening for devices as it was.
+async fn enable_web(endpoint: &Endpoint, listener: &mut Listener) -> bool {
+    match listener.set_web(true).await {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(relay = %endpoint, error = %error, "the relay offers no web access");
+            false
+        }
+    }
+}
+
+/// Aborts its task when dropped, however the session ends.
+struct Aborting(tokio::task::JoinHandle<()>);
+
+impl Drop for Aborting {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 

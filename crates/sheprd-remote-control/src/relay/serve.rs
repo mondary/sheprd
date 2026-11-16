@@ -7,7 +7,10 @@ use crate::web::{Peer, Relayed, Shared};
 use axum::{Extension, extract::ConnectInfo};
 use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 use sha2::{Digest, Sha256};
-use sheprd_relay::{RouteId, client::Incoming};
+use sheprd_relay::{
+    Endpoint, RouteId,
+    client::{Incoming, WebStream},
+};
 use sheprd_tunnel::{Responder, stream};
 use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
@@ -77,6 +80,44 @@ async fn serve(relays: &Relays, incoming: Incoming, route: RouteId, served: Serv
         tracing::debug!(error = %error, "a relay connection ended");
     }
     Ok(())
+}
+
+/// Serves one browser at this computer's web name on `endpoint`: TLS with
+/// its web certificate, then the app, as on the network. Until the
+/// certificate is good, the browser is closed. Rate limits and logs key it
+/// by the address the relay reported.
+pub(super) async fn web_session(
+    relays: &Relays,
+    stream: WebStream,
+    endpoint: &Endpoint,
+    served: Served,
+) {
+    let Some(serving) = relays.web_serving(endpoint) else {
+        return;
+    };
+    let peer = SocketAddr::new(stream.from, 0);
+    let io = join(stream.recv, stream.send);
+    let accepted = tokio::time::timeout(
+        HANDSHAKE,
+        tokio_rustls::TlsAcceptor::from(serving.config).accept(io),
+    )
+    .await;
+    let Ok(Ok(tls)) = accepted else {
+        return;
+    };
+    let service = TowerToHyperService::new(
+        served
+            .router
+            .layer(Extension(ConnectInfo(Peer(peer))))
+            .layer(Extension(Relayed)),
+    );
+    let done = hyper::server::conn::http1::Builder::new()
+        .serve_connection(TokioIo::new(tls), service)
+        .with_upgrades()
+        .await;
+    if let Err(error) = done {
+        tracing::debug!(error = %error, "a browser connection through a relay ended");
+    }
 }
 
 /// Whether `remote` is a paired device's tunnel key.

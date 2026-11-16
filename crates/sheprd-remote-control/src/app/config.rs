@@ -32,7 +32,12 @@
 use crate::app::Error;
 use crate::relay_label::RelayLabel;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::IpAddr, ops::RangeInclusive, path::PathBuf};
+use std::{
+    fmt,
+    net::IpAddr,
+    ops::RangeInclusive,
+    path::{Path, PathBuf},
+};
 
 pub const DEFAULT_PORT: u16 = 7443;
 const DEFAULT_IDLE_DAYS: u16 = 30;
@@ -104,6 +109,7 @@ impl RemoteConfig {
                 relay: relay.endpoint.clone(),
                 source,
             })?;
+            check_token_file(relay)?;
         }
         if let Certificate::Files { cert, key } = &self.certificate {
             for (which, path) in [("cert", cert), ("key", key)] {
@@ -116,18 +122,34 @@ impl RemoteConfig {
     }
 }
 
-/// One relay in `[remote] relays`: its address, and what the user calls it.
+/// One relay in `[remote] relays`: its address, what the user calls it,
+/// and, for a private relay, its listen token and whether browsers reach
+/// this computer through it (`docs/relay-web-plan.md`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Relay {
     pub endpoint: String,
     pub label: RelayLabel,
+    /// The file holding the relay operator's listen token: an absolute
+    /// path, so the token stays out of the config and the service
+    /// definition.
+    pub token_file: Option<PathBuf>,
+    /// Whether browsers may reach this computer at its web name on this
+    /// relay.
+    pub web: bool,
+}
+
+impl Relay {
+    /// Whether the config file needs a table for it, not the address alone.
+    fn is_plain(&self) -> bool {
+        self.label.is_empty() && self.token_file.is_none() && !self.web
+    }
 }
 
 impl From<String> for Relay {
     fn from(endpoint: String) -> Self {
         Self {
             endpoint,
-            label: RelayLabel::default(),
+            ..Self::default()
         }
     }
 }
@@ -139,7 +161,8 @@ impl From<&str> for Relay {
 }
 
 impl<'de> Deserialize<'de> for Relay {
-    /// `"ENDPOINT"`, or `{ endpoint = "ENDPOINT", name, description, tags }`.
+    /// `"ENDPOINT"`, or `{ endpoint = "ENDPOINT", name, description, tags,
+    /// token_file, web }`.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -151,13 +174,19 @@ impl<'de> Deserialize<'de> for Relay {
             description: Option<String>,
             #[serde(default)]
             tags: Vec<String>,
+            #[serde(default)]
+            token_file: Option<PathBuf>,
+            #[serde(default)]
+            web: bool,
         }
         struct Visitor;
         impl<'de> serde::de::Visitor<'de> for Visitor {
             type Value = Relay;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a relay address, or { endpoint, name, description, tags }")
+                f.write_str(
+                    "a relay address, or { endpoint, name, description, tags, token_file, web }",
+                )
             }
 
             fn visit_str<E: serde::de::Error>(self, endpoint: &str) -> Result<Relay, E> {
@@ -170,6 +199,8 @@ impl<'de> Deserialize<'de> for Relay {
                     name,
                     description,
                     tags,
+                    token_file,
+                    web,
                 } = Labeled::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
                 Ok(Relay {
                     endpoint,
@@ -178,6 +209,8 @@ impl<'de> Deserialize<'de> for Relay {
                         name,
                         tags,
                     },
+                    token_file,
+                    web,
                 })
             }
         }
@@ -362,39 +395,69 @@ impl Edit {
             Self::Relays(relays) => {
                 // Written as the daemon names them, each once, so the
                 // list matches the relays its status reports.
-                // A relay named twice keeps its first place and the label
-                // the daemon goes by: the last one given.
-                let mut merged: Vec<(String, RelayLabel)> = Vec::new();
-                for Relay { endpoint, label } in relays {
-                    let address = relay_address(&endpoint)?;
-                    label.check().map_err(|source| Error::RelayLabel {
+                // A relay named twice keeps its first place and what the
+                // daemon goes by: the last label, token, and web switch given.
+                let mut merged: Vec<Relay> = Vec::new();
+                for relay in relays {
+                    let address = relay_address(&relay.endpoint)?;
+                    relay.label.check().map_err(|source| Error::RelayLabel {
                         relay: address.clone(),
                         source,
                     })?;
-                    match merged.iter_mut().find(|(listed, _)| *listed == address) {
-                        Some((_, kept)) if !label.is_empty() => *kept = label,
-                        Some(_) => {}
-                        None => merged.push((address, label)),
+                    check_token_file(&relay)?;
+                    let relay = Relay {
+                        endpoint: address,
+                        ..relay
+                    };
+                    match merged
+                        .iter_mut()
+                        .find(|kept| kept.endpoint == relay.endpoint)
+                    {
+                        Some(kept) => {
+                            if !relay.label.is_empty() {
+                                kept.label = relay.label;
+                            }
+                            if relay.token_file.is_some() {
+                                kept.token_file = relay.token_file;
+                            }
+                            kept.web |= relay.web;
+                        }
+                        None => merged.push(relay),
                     }
                 }
-                let listed = merged
-                    .into_iter()
-                    .map(|(address, label)| relay_value(&address, label))
-                    .collect();
+                let listed = merged.into_iter().map(relay_value).collect();
                 ("relays", toml_edit::Value::Array(listed))
             }
         })
     }
 }
 
-/// A relay as the config file writes it: its address alone, or a table
-/// with its label.
-fn relay_value(address: &str, label: RelayLabel) -> toml_edit::Value {
-    if label.is_empty() {
-        return address.into();
+/// Refuses a token file that is not an absolute UTF-8 path.
+fn check_token_file(relay: &Relay) -> Result<(), Error> {
+    match &relay.token_file {
+        Some(path) if !path.is_absolute() || path.to_str().is_none() => {
+            Err(Error::RelayTokenFile {
+                relay: relay.endpoint.clone(),
+            })
+        }
+        _ => Ok(()),
     }
+}
+
+/// A relay as the config file writes it: its address alone, or a table
+/// with its label, token file, and web switch.
+fn relay_value(relay: Relay) -> toml_edit::Value {
+    if relay.is_plain() {
+        return relay.endpoint.into();
+    }
+    let Relay {
+        endpoint,
+        label,
+        token_file,
+        web,
+    } = relay;
     let mut table = toml_edit::InlineTable::new();
-    table.insert("endpoint", address.into());
+    table.insert("endpoint", endpoint.into());
     if let Some(name) = label.name {
         table.insert("name", name.into());
     }
@@ -406,6 +469,12 @@ fn relay_value(address: &str, label: RelayLabel) -> toml_edit::Value {
             "tags",
             label.tags.iter().collect::<toml_edit::Array>().into(),
         );
+    }
+    if let Some(path) = token_file.as_deref().and_then(Path::to_str) {
+        table.insert("token_file", path.into());
+    }
+    if web {
+        table.insert("web", true.into());
     }
     toml_edit::Value::InlineTable(table)
 }

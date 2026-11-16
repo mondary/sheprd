@@ -53,11 +53,15 @@ pub struct Options {
     pub wsl_catalog: Option<PathBuf>,
 }
 
-/// A relay to listen on, and what the user calls it.
+/// A relay to listen on, what the user calls it, and, for a private
+/// relay, where its listen token is and whether browsers reach this
+/// computer through it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Relay {
     pub endpoint: sheprd_relay::Endpoint,
     pub label: RelayLabel,
+    pub token_file: Option<PathBuf>,
+    pub web: bool,
 }
 
 impl From<sheprd_relay::Endpoint> for Relay {
@@ -65,6 +69,8 @@ impl From<sheprd_relay::Endpoint> for Relay {
         Self {
             endpoint,
             label: RelayLabel::default(),
+            token_file: None,
+            web: false,
         }
     }
 }
@@ -168,6 +174,10 @@ Options:
   --relay-description TEXT A line about the --relay before it, such as
                            not for public use
   --relay-tag TAG          A tag for the --relay before it; repeatable
+  --relay-token-file FILE  The --relay before it is private: present the
+                           listen token in FILE
+  --relay-web              Let browsers reach this computer at its web name on
+                           the --relay before it (a private relay's)
   --no-bonjour             Do not advertise over Bonjour; phones then pair
                            by QR code only (on macOS, Sheprd advertises
                            while its pairing dialog is open instead)
@@ -308,6 +318,11 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
                 let tag = text(value("--relay-tag")?, "--relay-tag")?;
                 last_label(&mut relays, "--relay-tag")?.tags.push(tag);
             }
+            "--relay-token-file" => {
+                let path = PathBuf::from(value("--relay-token-file")?);
+                last_relay(&mut relays, "--relay-token-file")?.token_file = Some(path);
+            }
+            "--relay-web" => last_relay(&mut relays, "--relay-web")?.web = true,
             "--no-bonjour" => bonjour = false,
             "--github-cli" => github_cli = true,
             "-h" | "--help" => return Ok(Invocation::Help),
@@ -361,10 +376,15 @@ fn last_label<'a>(
     relays: &'a mut [Relay],
     option: &'static str,
 ) -> Result<&'a mut RelayLabel, ParseError> {
-    relays
-        .last_mut()
-        .map(|relay| &mut relay.label)
-        .ok_or(ParseError::NoRelay { option })
+    last_relay(relays, option).map(|relay| &mut relay.label)
+}
+
+/// The relay the option follows.
+fn last_relay<'a>(
+    relays: &'a mut [Relay],
+    option: &'static str,
+) -> Result<&'a mut Relay, ParseError> {
+    relays.last_mut().ok_or(ParseError::NoRelay { option })
 }
 
 /// `enroll [--state-dir DIR]` and `revoke --device ID [--state-dir DIR]`.

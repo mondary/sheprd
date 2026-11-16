@@ -29,6 +29,8 @@ error-remote-control-relay-label-control = its { $field } has a control characte
 # $max is a number of characters.
 error-remote-control-relay-label-length = its { $field } is longer than { $max } characters
 error-remote-control-relay-label-tags = it has more than { $max } tags
+# $relay is an entry of remote.relays; token_file is the config key, not translated.
+error-remote-control-relay-token-file = remote.relays gives { $relay } a token_file that is not an absolute path
 error-remote-control-qr = The pairing link does not fit in a QR code
 # $program is the service manager command, such as launchctl or systemctl;
 # $status is how it ended, in the system's words; $stderr is its own output.

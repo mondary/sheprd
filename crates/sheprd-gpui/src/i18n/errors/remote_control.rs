@@ -43,6 +43,10 @@ impl Localize for app::Error {
                 relay = relay.as_str(),
                 reason = source.localize()
             ),
+            Self::RelayTokenFile { relay } => fl!(
+                "error-remote-control-relay-token-file",
+                relay = relay.as_str()
+            ),
             Self::Service {
                 program,
                 status,

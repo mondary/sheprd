@@ -19,6 +19,7 @@ fn fra3() -> Relay {
             name: Some("fra3".into()),
             tags: vec!["eu".into(), "private".into()],
         },
+        ..Relay::default()
     }
 }
 

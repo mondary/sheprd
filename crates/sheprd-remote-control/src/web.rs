@@ -154,9 +154,14 @@ impl State {
             )
     }
 
-    /// Whether `origin` is this computer's own: served now or before.
+    /// Whether `origin` is this computer's own: served now or before, or
+    /// one of its web names on a relay.
     pub(crate) fn serves(&self, origin: &str) -> bool {
         allowed_origin(&self.origins(), origin)
+            || self
+                .relay
+                .as_ref()
+                .is_some_and(|relay| relay.serves_web_origin(origin))
             || self
                 .seen
                 .lock()

@@ -38,8 +38,8 @@ use tokio::net::TcpListener;
 
 /// HTTP connections beyond the hub's sockets: plain requests such as
 /// `/v1/info` and the dashboard, in all and from one caller.
-const HTTP_HEADROOM: usize = 1_024;
-const HTTP_HEADROOM_PER_CALLER: usize = 16;
+pub(crate) const HTTP_HEADROOM: usize = 1_024;
+pub(crate) const HTTP_HEADROOM_PER_CALLER: usize = 16;
 
 /// The shortest listen or metrics token the relay accepts.
 const MIN_TOKEN: usize = 16;
@@ -393,18 +393,7 @@ async fn start_front(address: SocketAddr, options: &Options, hub: &Arc<Hub>) -> 
         relay_host: Arc::from(relay_host),
         upstream: options.front_upstream.as_deref().map(Arc::from),
     };
-    let limits = &options.limits;
-    let listener = Capped::new(
-        bind(address).await?,
-        limits.max_connections.saturating_add(HTTP_HEADROOM),
-        Some(
-            limits
-                .max_connections_per_ip
-                .saturating_add(HTTP_HEADROOM_PER_CALLER),
-        ),
-        limits.idle_timeout,
-    );
-    tokio::spawn(front::run(listener, Arc::clone(hub), config));
+    front::spawn(bind(address).await?, Arc::clone(hub), config);
     tracing::info!(%address, "serving the TCP front");
     Ok(())
 }

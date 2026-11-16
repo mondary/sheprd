@@ -8,8 +8,18 @@ pub enum Error {
     Client(#[from] sheprd_relay::client::Error),
     #[error("a stored relay key is not one")]
     StoredKey,
+    #[error("the listen token in {} is empty or longer than 255 bytes", path.display())]
+    Token { path: std::path::PathBuf },
+    #[error("could not read the listen token in {}", path.display())]
+    TokenFile {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("the end-to-end tunnel failed")]
     Tunnel(#[from] sheprd_tunnel::Error),
+    #[error(transparent)]
+    Web(#[from] super::web::Error),
     // keep-sorted end
 }
 

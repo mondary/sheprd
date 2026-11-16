@@ -111,6 +111,19 @@ impl Endpoint {
         }
     }
 
+    /// The web name browsers reach `route` at through this relay,
+    /// `<label>.<relay host>` (`docs/relay-web-plan.md`): only for a relay
+    /// reached by a host name, which a certificate can sit under.
+    #[must_use]
+    pub fn web_host(&self, route: &RouteId) -> Option<String> {
+        match self.base.host() {
+            Some(Host::Domain(name)) => {
+                Some(crate::WebLabel::of(route).host(&name.to_ascii_lowercase()))
+            }
+            _ => None,
+        }
+    }
+
     /// The `Host` its WebSocket client sends.
     #[must_use]
     pub fn host(&self) -> String {
