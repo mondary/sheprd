@@ -135,9 +135,19 @@ fn a_private_relays_token_is_read_from_its_file() {
 
 /// A private relay on loopback named `localhost`, running its front:
 /// its HTTP address, and the front's.
+///
+/// It listens where `localhost` resolves first, which is `::1` on
+/// Windows: a client tries each address in turn and gives an unanswered
+/// one seconds before the next.
 async fn private_relay() -> (SocketAddr, SocketAddr) {
+    let loopback = tokio::net::lookup_host("localhost:0")
+        .await
+        .unwrap()
+        .next()
+        .unwrap()
+        .ip();
     let (endpoint, info) =
-        sheprd_relay::bind_quic("127.0.0.1:0".parse().unwrap(), None, None).unwrap();
+        sheprd_relay::bind_quic(SocketAddr::new(loopback, 0), None, None).unwrap();
     let front_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let front_address = front_listener.local_addr().unwrap();
     let options = RelayOptions {
@@ -155,7 +165,7 @@ async fn private_relay() -> (SocketAddr, SocketAddr) {
         upstream: None,
     };
     front::spawn(front_listener, hub, config);
-    let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let tcp = TcpListener::bind((loopback, 0)).await.unwrap();
     let http = tcp.local_addr().unwrap();
     tokio::spawn(async move {
         axum::serve(
