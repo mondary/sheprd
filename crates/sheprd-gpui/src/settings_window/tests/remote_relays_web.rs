@@ -18,7 +18,11 @@ use sheprd_remote_control::control::{
 use std::path::{Path, PathBuf};
 
 const HOME: &str = "https://relay.example.org";
+// The token file must be absolute, which a Unix path is not on Windows.
+#[cfg(not(windows))]
 const TOKEN: &str = "/etc/relay/token";
+#[cfg(windows)]
+const TOKEN: &str = r"C:\sheprd\relay.token";
 
 fn relay(token: bool, web: bool) -> Relay {
     Relay {
