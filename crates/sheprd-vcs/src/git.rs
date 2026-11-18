@@ -269,6 +269,19 @@ impl Git {
     pub fn track(&mut self, input: Option<Input>, refresh: bool, now: Instant) -> bool {
         let mut changed = false;
         if self.input != input {
+            // Keep the last focused result for the sidebar when the user
+            // switches workspaces. Listed workspaces are refreshed on a
+            // slower schedule, so without this handoff their counts would
+            // disappear until the next probe completes.
+            if let (Some(previous), Some(lines)) = (self.input.clone(), self.status) {
+                let dirty = self.uncommitted.unwrap_or_else(|| lines.dirty());
+                let answer = if self.counted {
+                    Answer::Counted(Counted { lines, dirty })
+                } else {
+                    Answer::Dirty(dirty)
+                };
+                self.record_probe(previous, Some(answer), now);
+            }
             // A running action keeps running: its result still belongs to the
             // checkout it was started for and is reported against that input.
             self.input = input;
@@ -309,6 +322,22 @@ impl Git {
             .map(Answer::dirty)
     }
 
+    /// A checkout's cached dirty bit by its full input. Unlike [`Self::dirty`],
+    /// this also finds a local workspace Git resolved from its directory when
+    /// the daemon has no repository key for it.
+    pub fn dirty_for_input(&self, input: &Input) -> Option<bool> {
+        if self.input.as_ref() == Some(input)
+            && let Some(uncommitted) = self.uncommitted
+        {
+            return Some(uncommitted);
+        }
+        self.probes
+            .iter()
+            .find(|probe| probe.input == *input)
+            .and_then(|probe| probe.answer)
+            .map(Answer::dirty)
+    }
+
     /// This checkout's line counts against HEAD, if the focused refresh or a
     /// counted probe has them. Pure cache read, like [`Self::dirty`].
     pub fn counts(&self, repo_key: &str, branch: &str) -> Option<Status> {
@@ -323,6 +352,23 @@ impl Git {
             .find(|probe| {
                 probe.input.repo_key.as_deref() == Some(repo_key) && probe.input.branch == branch
             })
+            .and_then(|probe| match probe.answer {
+                Some(Answer::Counted(counted)) => Some(counted.lines),
+                _ => None,
+            })
+    }
+
+    /// A checkout's cached line counts by its full input, including local
+    /// workspaces identified only by their directory and branch.
+    pub fn counts_for_input(&self, input: &Input) -> Option<Status> {
+        if self.input.as_ref() == Some(input)
+            && let Some(status) = self.status
+        {
+            return Some(status);
+        }
+        self.probes
+            .iter()
+            .find(|probe| probe.input == *input)
             .and_then(|probe| match probe.answer {
                 Some(Answer::Counted(counted)) => Some(counted.lines),
                 _ => None,

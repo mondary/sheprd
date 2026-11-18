@@ -270,6 +270,29 @@ pub(super) fn visible_workspace_entries(
     entries
 }
 
+fn workspace_git_input(workspace: &Workspace) -> Option<crate::pull_request::Input> {
+    let branch = workspace.branch.as_deref().filter(|branch| {
+        !branch.is_empty() && branch.len() <= 1024 && !branch.chars().any(char::is_control)
+    })?;
+    let worktree = workspace.worktree.as_ref().filter(|tree| {
+        tree.linked || !sheprd_github::checkout::left_checkout(&tree.key, &workspace.cwd)
+    });
+    if let Some(tree) = worktree {
+        return Some(crate::pull_request::Input {
+            checkout: None,
+            repo_key: Some(tree.key.clone()),
+            branch: branch.to_owned(),
+        });
+    }
+    Path::new(&workspace.cwd)
+        .is_absolute()
+        .then(|| crate::pull_request::Input {
+            checkout: Some(workspace.cwd.clone()),
+            repo_key: None,
+            branch: branch.to_owned(),
+        })
+}
+
 /// Cached pull request, change counts, dirty, note, and teleported marks for a worktree row, if
 /// the prefetch and the Git probe already have them. Rendering only reads: a missing entry
 /// simply shows nothing, never a stale or guessed state. `git` carries which counts to show:
@@ -287,23 +310,15 @@ pub(super) fn workspace_badge(
     (note, muted): (Option<&str>, bool),
     theme: &Theme,
 ) -> Option<RowBadge> {
+    let input = workspace_git_input(workspace);
     let tracked = git.0.and_then(|git| git.tracked());
-    let tracks_this_workspace = focused
-        || tracked.is_some_and(|input| {
-            input.checkout.as_deref() == Some(workspace.cwd.as_str())
-                || (workspace.branch.as_deref() == Some(input.branch.as_str())
-                    && workspace
-                        .worktree
-                        .as_ref()
-                        .is_some_and(|tree| input.repo_key.as_deref() == Some(tree.key.as_str())))
-        });
+    let tracks_this_workspace = focused || input.as_ref() == tracked;
     let focused_counts = tracks_this_workspace
         .then(|| {
             if git.1 == ChangeCounts::Local {
                 git.0
                     .and_then(|git| git.status())
                     .filter(|status| status.additions > 0 || status.deletions > 0)
-                    .map(|status| Counts::local(status.additions, status.deletions))
             } else {
                 None
             }
@@ -312,6 +327,12 @@ pub(super) fn workspace_badge(
     let focused_dirty = tracks_this_workspace
         .then(|| git.0.and_then(|git| git.uncommitted()))
         .flatten();
+    let cached_counts = git
+        .0
+        .and_then(|git| input.as_ref().and_then(|input| git.counts_for_input(input)));
+    let cached_dirty = git
+        .0
+        .and_then(|git| input.as_ref().and_then(|input| git.dirty_for_input(input)));
     let checkout = workspace
         .worktree
         .as_ref()
@@ -320,8 +341,12 @@ pub(super) fn workspace_badge(
     let Some((key, branch)) = checkout else {
         return RowBadge::new(
             None,
-            focused_counts,
-            focused_dirty.unwrap_or(false),
+            (git.1 == ChangeCounts::Local)
+                .then(|| focused_counts.or(cached_counts))
+                .flatten()
+                .filter(|status| status.additions > 0 || status.deletions > 0)
+                .map(|status| Counts::local(status.additions, status.deletions)),
+            focused_dirty.or(cached_dirty).unwrap_or(false),
             false,
             false,
             muted,
@@ -359,19 +384,16 @@ pub(super) fn workspace_badge(
             .as_ref()
             .map(|pr| Counts::new(pr.additions, pr.deletions)),
         // Untracked files have no line counts; the dirty mark still shows them.
-        ChangeCounts::Local => git
-            .and_then(|git| git.counts(key, branch))
+        ChangeCounts::Local => focused_counts
+            .or(cached_counts)
             .filter(|status| status.additions > 0 || status.deletions > 0)
-            .map(|status| Counts::local(status.additions, status.deletions))
-            .or(focused_counts),
+            .map(|status| Counts::local(status.additions, status.deletions)),
     };
     RowBadge::new(
         pr.map(|pr| PrBadge::new(&pr, theme))
             .or_else(|| unopened.then(|| PrBadge::unopened(theme))),
         counts,
-        git.and_then(|git| git.dirty(key, branch))
-            .or(focused_dirty)
-            .unwrap_or(false),
+        focused_dirty.or(cached_dirty).unwrap_or(false),
         marks.find(endpoint, key, branch).is_some(),
         note.is_some(),
         muted,

@@ -175,6 +175,53 @@ fn the_focused_checkout_shows_counts_without_repository_metadata() {
 }
 
 #[test]
+fn a_directory_opened_project_keeps_local_counts_when_another_project_is_focused() {
+    let mut workspace = crate::session_model::of_snapshot(&layout_tests::snapshot(1))
+        .workspaces
+        .remove(0);
+    workspace.branch = Some("main".into());
+    workspace.cwd = "/projects/chrome-extension".into();
+    workspace.worktree = None;
+    let input = crate::pull_request::Input {
+        checkout: Some(workspace.cwd.clone()),
+        repo_key: None,
+        branch: "main".into(),
+    };
+    let now = Instant::now();
+    let mut git = Git::default();
+    git.seed_counts(
+        input,
+        Counted {
+            lines: Status {
+                additions: 42,
+                deletions: 7,
+                untracked: 0,
+            },
+            dirty: true,
+        },
+        now,
+    );
+    let cache = crate::pull_request::Cache::default();
+
+    assert_eq!(
+        counts(&workspace, &cache, &git, ChangeCounts::Local),
+        Some(("+42".into(), "-7".into()))
+    );
+    let marks = crate::teleport::Marks::detached();
+    let badge = workspace_badge(
+        &workspace,
+        false,
+        None,
+        (Some(&git), ChangeCounts::Local),
+        (&marks, crate::endpoint::LOCAL),
+        (None, false),
+        &Theme::default(),
+    )
+    .unwrap();
+    assert!(badge.dirty);
+}
+
+#[test]
 fn a_merged_pull_request_keeps_its_number_until_the_branch_moves_past_it() {
     let snapshot = crate::session_model::of_snapshot(&layout_tests::snapshot(6));
     let child = &snapshot.workspaces[4];
