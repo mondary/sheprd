@@ -289,6 +289,9 @@ impl SheprdWindow {
                     let workspace = &workspaces[index];
                     let linked = crate::worktree_identity::is_linked(workspace);
                     let focused = front == Some(workspace.id.as_str());
+                    // The focused Git checkout follows the Herdr focus even
+                    // when a kept Herdr 2 tab owns the visible focus above it.
+                    let git_focused = session.focused.as_deref() == Some(workspace.id.as_str());
                     if focused {
                         highlighted[0] = Some(space_rows);
                     }
@@ -480,6 +483,7 @@ impl SheprdWindow {
                             grouped,
                             badge: workspace_badge(
                                 workspace,
+                                git_focused,
                                 pr_view.as_ref().map(|view| (&self.menu.pr_cache, view)),
                                 (
                                     (endpoint_index == 0).then_some(&self.git),

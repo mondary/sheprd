@@ -280,19 +280,52 @@ pub(super) fn visible_workspace_entries(
 /// not looked up. Any workspace, Git checkout or not, carries its muted mark.
 pub(super) fn workspace_badge(
     workspace: &Workspace,
+    focused: bool,
     pr: Option<(&crate::pull_request::Cache, &crate::pull_request::View)>,
     git: (Option<&crate::git::Git>, ChangeCounts),
     marks: (&crate::teleport::Marks, &str),
     (note, muted): (Option<&str>, bool),
     theme: &Theme,
 ) -> Option<RowBadge> {
+    let tracked = git.0.and_then(|git| git.tracked());
+    let tracks_this_workspace = focused
+        || tracked.is_some_and(|input| {
+            input.checkout.as_deref() == Some(workspace.cwd.as_str())
+                || (workspace.branch.as_deref() == Some(input.branch.as_str())
+                    && workspace
+                        .worktree
+                        .as_ref()
+                        .is_some_and(|tree| input.repo_key.as_deref() == Some(tree.key.as_str())))
+        });
+    let focused_counts = tracks_this_workspace
+        .then(|| {
+            if git.1 == ChangeCounts::Local {
+                git.0
+                    .and_then(|git| git.status())
+                    .filter(|status| status.additions > 0 || status.deletions > 0)
+                    .map(|status| Counts::local(status.additions, status.deletions))
+            } else {
+                None
+            }
+        })
+        .flatten();
+    let focused_dirty = tracks_this_workspace
+        .then(|| git.0.and_then(|git| git.uncommitted()))
+        .flatten();
     let checkout = workspace
         .worktree
         .as_ref()
         .map(|tree| tree.key.as_str())
         .zip(workspace.branch.as_deref());
     let Some((key, branch)) = checkout else {
-        return RowBadge::new(None, None, false, false, false, muted);
+        return RowBadge::new(
+            None,
+            focused_counts,
+            focused_dirty.unwrap_or(false),
+            false,
+            false,
+            muted,
+        );
     };
     let ((marks, endpoint), (git, counts)) = (marks, git);
     // Kept SSH lookups include the checkout directory, unlike H1's
@@ -329,13 +362,16 @@ pub(super) fn workspace_badge(
         ChangeCounts::Local => git
             .and_then(|git| git.counts(key, branch))
             .filter(|status| status.additions > 0 || status.deletions > 0)
-            .map(|status| Counts::local(status.additions, status.deletions)),
+            .map(|status| Counts::local(status.additions, status.deletions))
+            .or(focused_counts),
     };
     RowBadge::new(
         pr.map(|pr| PrBadge::new(&pr, theme))
             .or_else(|| unopened.then(|| PrBadge::unopened(theme))),
         counts,
-        git.and_then(|git| git.dirty(key, branch)).unwrap_or(false),
+        git.and_then(|git| git.dirty(key, branch))
+            .or(focused_dirty)
+            .unwrap_or(false),
         marks.find(endpoint, key, branch).is_some(),
         note.is_some(),
         muted,

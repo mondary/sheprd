@@ -4227,6 +4227,9 @@ Ctrl+Shift+U is left unbound for
   end on one-line rows, Compact included. Minimal rows leave them off. They
   appear only while the daemon's `[ui.sidebar.spaces]` rows name `git_status`,
   as its defaults do, because the daemon computes them only then.
+  Compact shows a selected local count on the project's first line, beside its
+  name; it remains visible even though Compact otherwise omits the second,
+  pull-request count line.
 - With several hosts listed, the Spaces list groups workspaces under a row per
   host, and the row of the host whose workspaces are at the top of the
   scrolled list stays pinned there, so you can always see which machine they

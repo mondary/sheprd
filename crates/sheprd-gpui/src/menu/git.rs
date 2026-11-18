@@ -93,11 +93,8 @@ impl SheprdWindow {
             .iter()
             .flat_map(|snapshot| snapshot.workspaces.iter())
             .filter_map(|workspace| {
-                crate::pull_request::repository_input(
-                    workspace.worktree.as_ref(),
-                    workspace.branch.as_deref(),
-                )
-                .ok()
+                crate::pull_request::workspace_input(workspace, &crate::pull_request::Origin::Local)
+                    .ok()
             })
             .chain(kept)
             .collect()

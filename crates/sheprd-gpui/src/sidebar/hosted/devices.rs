@@ -31,6 +31,9 @@ struct Place<'a> {
     collapsed: &'a HashSet<String>,
     muted: bool,
     focused: bool,
+    /// This workspace is the Herdr daemon's focused checkout, whose status
+    /// the live Git panel tracks directly.
+    git_focused: bool,
     number: usize,
     /// The status its dot shows: a folded group's most urgent, when the
     /// config shows statuses inline, as the window's own row does.
@@ -142,6 +145,7 @@ impl SheprdWindow {
             let front = Sessions::front_of(keeper, session, kept_front);
             for (row, child) in workspace_entries(&session.workspaces) {
                 let workspace = &session.workspaces[row];
+                let git_focused = session.focused.as_deref() == Some(workspace.id.as_str());
                 number += 1;
                 let place = Place {
                     index: self.selected_endpoint,
@@ -150,6 +154,7 @@ impl SheprdWindow {
                     collapsed: &none,
                     muted: silenced.contains(&workspace.id),
                     focused: front == Some(workspace.id.as_str()),
+                    git_focused,
                     number,
                     status: workspace.status,
                 };
@@ -209,6 +214,7 @@ impl SheprdWindow {
                 &self.config.sidebar_style.workspace_groups,
             ) {
                 let workspace = &session.workspaces[row];
+                let git_focused = session.focused.as_deref() == Some(workspace.id.as_str());
                 number += 1;
                 let place = Place {
                     index,
@@ -217,6 +223,7 @@ impl SheprdWindow {
                     collapsed,
                     muted: silenced.contains(&workspace.id),
                     focused: front == Some(workspace.id.as_str()),
+                    git_focused,
                     number,
                     status: if self.config.usage.inline {
                         displayed_workspace_status(
@@ -245,6 +252,7 @@ impl SheprdWindow {
         let pr_view = self.endpoint_pr_view(place.index);
         let badge = workspace_badge(
             workspace,
+            place.index == 0 && place.git_focused,
             pr_view.as_ref().map(|view| (&self.menu.pr_cache, view)),
             // Only this computer's checkouts are probed; a remote one with
             // the same repository and branch is another checkout.

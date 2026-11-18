@@ -26,6 +26,7 @@ fn counts(
     let marks = crate::teleport::Marks::detached();
     workspace_badge(
         workspace,
+        false,
         Some((cache, &crate::pull_request::View::default())),
         (Some(git), mode),
         (&marks, crate::endpoint::LOCAL),
@@ -76,6 +77,7 @@ fn a_row_shows_only_the_change_counts_the_setting_picks() {
     let badge = |workspace, git| {
         workspace_badge(
             workspace,
+            false,
             None,
             (git, ChangeCounts::Local),
             (&marks, crate::endpoint::LOCAL),
@@ -104,6 +106,7 @@ fn pr_slot(
     let marks = crate::teleport::Marks::detached();
     workspace_badge(
         workspace,
+        false,
         Some((cache, &crate::pull_request::View::default())),
         (Some(git), ChangeCounts::PullRequest),
         (&marks, crate::endpoint::LOCAL),
@@ -135,6 +138,40 @@ fn commits_without_a_pull_request_take_the_number_slot_once_a_lookup_finished() 
     assert_eq!(pr_slot(child, &cache, &git).as_deref(), Some("+PR"));
     // Nothing ahead, as on a branch just cut or the default branch.
     assert_eq!(pr_slot(child, &cache, &Git::default()), None);
+}
+
+#[test]
+fn the_focused_checkout_shows_counts_without_repository_metadata() {
+    let mut workspace = crate::session_model::of_snapshot(&layout_tests::snapshot(1))
+        .workspaces
+        .remove(0);
+    workspace.branch = None;
+    workspace.worktree = None;
+    let git = Git::fixture(
+        input("main"),
+        Status {
+            additions: 30,
+            deletions: 51,
+            untracked: 2,
+        },
+    );
+    let marks = crate::teleport::Marks::detached();
+    let badge = workspace_badge(
+        &workspace,
+        true,
+        None,
+        (Some(&git), ChangeCounts::Local),
+        (&marks, crate::endpoint::LOCAL),
+        (None, false),
+        &Theme::default(),
+    )
+    .unwrap();
+    let counts = badge.counts.unwrap();
+    assert_eq!(
+        (counts.additions.as_str(), counts.deletions.as_str()),
+        ("+30", "-51")
+    );
+    assert!(badge.dirty);
 }
 
 #[test]
