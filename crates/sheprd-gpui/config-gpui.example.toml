@@ -433,11 +433,13 @@ size = 12
 # filter.
 # coordinator_suffix = "-coord"
 
-# Fold the workspaces opened directly inside these folders beneath the
-# workspace opened on the folder itself. The folder is not a synthetic row:
-# open its own workspace (with the coordinator tabs, for example), then open
-# one workspace per child project. Folding the folder row hides only those
-# direct children. Accepts absolute paths and `~/` paths.
+# Extra folders to fold even when their children are not Git checkouts. A hub
+# is detected automatically when the folder's own workspace is open beside at
+# least two direct child workspaces that are Git repositories, or when at least
+# two child folders start with the parent's name and an underscore (`Chrome`
+# with `Chrome_one` and `Chrome_two`). The folder itself is the selectable,
+# foldable row. Folding it hides the direct children. Accepts absolute paths
+# and `~/` paths.
 # workspace_groups = [
 #   "~/Documents/GitHub/PROJECTS/Chrome",
 # ]

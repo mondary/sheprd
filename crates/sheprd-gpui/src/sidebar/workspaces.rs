@@ -26,6 +26,13 @@ struct FolderGroup {
     key: String,
 }
 
+#[derive(Clone)]
+enum FolderRule {
+    All,
+    Git,
+    Prefix(String),
+}
+
 fn expand_group_root(root: &str) -> Option<String> {
     let root = root.trim().trim_end_matches(['/', '\\']);
     let expanded = if root == "~" || root.starts_with("~/") {
@@ -64,20 +71,63 @@ fn trim_group_path(path: &str) -> &str {
 /// selectable, foldable head; the children are ordinary workspaces and keep
 /// their own daemon ids.
 fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup> {
-    let mut ordered_roots: Vec<String> = roots
-        .iter()
-        .filter_map(|root| expand_group_root(root))
+    let mut candidates = HashMap::<String, (usize, FolderRule)>::new();
+    for root in roots.iter().filter_map(|root| expand_group_root(root)) {
+        if let Some(head) = workspaces
+            .iter()
+            .position(|workspace| trim_group_path(&workspace.cwd) == root)
+        {
+            candidates.insert(root, (head, FolderRule::All));
+        }
+    }
+    for (head, parent) in workspaces.iter().enumerate() {
+        let root = trim_group_path(&parent.cwd);
+        let children: Vec<_> = workspaces
+            .iter()
+            .filter(|workspace| {
+                Path::new(&workspace.cwd)
+                    .parent()
+                    .is_some_and(|path| trim_group_path(&path.to_string_lossy()) == root)
+            })
+            .collect();
+        let git_children = children
+            .iter()
+            .filter(|workspace| workspace.worktree.is_some())
+            .count();
+        let prefix = Path::new(root)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("{name}_"));
+        let prefixed_children = prefix.as_deref().is_some_and(|prefix| {
+            children
+                .iter()
+                .filter(|workspace| {
+                    Path::new(&workspace.cwd)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.starts_with(prefix))
+                })
+                .count()
+                >= 2
+        });
+        if git_children >= 2 || prefixed_children {
+            let rule = prefix
+                .filter(|_| prefixed_children)
+                .map_or(FolderRule::Git, FolderRule::Prefix);
+            candidates.entry(root.to_owned()).or_insert((head, rule));
+        }
+    }
+    let mut ordered_roots: Vec<(String, usize, FolderRule)> = candidates
+        .into_iter()
+        .map(|(root, (head, rule))| (root, head, rule))
         .collect();
-    ordered_roots.sort_by_key(|root| std::cmp::Reverse(root.len()));
-    ordered_roots.dedup();
+    ordered_roots.sort_by_key(|(root, _, _)| std::cmp::Reverse(root.len()));
     let mut claimed = HashSet::new();
     let mut groups = Vec::new();
-    for root in ordered_roots {
-        let Some(head) = workspaces.iter().position(|workspace| {
-            trim_group_path(&workspace.cwd) == root && !claimed.contains(&root)
-        }) else {
+    for (root, head, rule) in ordered_roots {
+        if claimed.contains(&root) {
             continue;
-        };
+        }
         let children: Vec<_> = workspaces
             .iter()
             .enumerate()
@@ -87,6 +137,14 @@ fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup>
                     && Path::new(&workspace.cwd)
                         .parent()
                         .is_some_and(|parent| trim_group_path(&parent.to_string_lossy()) == root)
+                    && match &rule {
+                        FolderRule::All => true,
+                        FolderRule::Git => workspace.worktree.is_some(),
+                        FolderRule::Prefix(prefix) => Path::new(&workspace.cwd)
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .is_some_and(|name| name.starts_with(prefix)),
+                    }
             })
             .map(|(index, _)| index)
             .collect();

@@ -230,3 +230,37 @@ fn configured_folder_groups_nest_direct_project_workspaces_and_collapse_them() {
         AgentStatus::Blocked
     );
 }
+
+#[test]
+fn folders_with_git_children_and_named_prefixes_become_groups_automatically() {
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(4)).workspaces;
+    for workspace in &mut workspaces {
+        workspace.worktree = None;
+    }
+    workspaces[0].cwd = "/work/Hub".into();
+    workspaces[1].cwd = "/work/Hub/repo-one".into();
+    workspaces[2].cwd = "/work/Hub/repo-two".into();
+    workspaces[3].cwd = "/work/Other".into();
+    workspaces[1].worktree = worktree("/work/Hub/repo-one/.git", false);
+    workspaces[2].worktree = worktree("/work/Hub/repo-two/.git", false);
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &Default::default(), &[]),
+        vec![
+            (0, false, Some("folder:/work/Hub".into())),
+            (1, true, None),
+            (2, true, None),
+            (3, false, None),
+        ]
+    );
+
+    // A folder named Chrome also groups direct Hello_ children without Git.
+    workspaces[0].cwd = "/work/Chrome".into();
+    workspaces[1].cwd = "/work/Chrome/Chrome_one".into();
+    workspaces[2].cwd = "/work/Chrome/Chrome_two".into();
+    workspaces[1].worktree = None;
+    workspaces[2].worktree = None;
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &Default::default(), &[])[0].2,
+        Some("folder:/work/Chrome".into())
+    );
+}

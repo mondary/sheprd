@@ -1215,12 +1215,14 @@ placement** in **Settings > Sidebar**, to list each agent under the workspace
 it runs in instead; Spaces then takes the full sidebar height. The collapsed
 rail keeps its own agents section either way.
 
-`[sidebar] workspace_groups` folds a folder's child workspaces beneath the
-workspace opened on the folder itself. For example, opening
-`~/Projects/Chrome` and one workspace for each project directly inside it,
-then setting `workspace_groups = ["~/Projects/Chrome"]`, draws one Chrome row
-with those project workspaces indented below it. Its arrow folds or unfolds
-exactly those direct children; linked worktrees keep their existing grouping.
+The sidebar detects a project hub when a workspace's folder has its own open
+workspace and at least two direct child workspaces that are Git repositories.
+It also detects the naming form `Chrome` with `Chrome_one` and `Chrome_two`,
+whether or not each child is a repository. The folder workspace becomes one
+foldable row with those project workspaces indented below it; its arrow hides
+or shows exactly those direct children, while linked worktrees keep their
+existing grouping. `[sidebar] workspace_groups` adds folders to this hierarchy
+when neither automatic rule fits.
 
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
