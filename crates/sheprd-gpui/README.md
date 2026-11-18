@@ -1209,6 +1209,13 @@ order then follows Herdr's `ui.agent_panel_sort` (`priority` or `grouped`)
 unless it was toggled earlier or a plugin sets the agent view, which keeps the
 header shown while that view is active.
 
+Turn on **Show Changed panel** in **Settings > Sidebar** to keep the
+**Changed** file list beside the terminals. It follows the focused local Git
+checkout and shows its uncommitted files with added and removed line counts.
+The panel can also hold sections from Sheprd mods, and **Toggle Mod Panel**
+hides or shows the whole panel. The same setting is available as top-level
+`show_changes_panel`.
+
 Agents list in their own section below Spaces by default. Set top-level
 `agents_placement = "nested"`, or pick **Under workspaces** for **Agents
 placement** in **Settings > Sidebar**, to list each agent under the workspace

@@ -139,7 +139,8 @@ impl RowBadge {
         layout: &SidebarMetrics,
     ) -> Div {
         let chipped = self.chipped(layout);
-        let inline_counts = layout.inline_counts() && self.shown_counts(layout).is_some();
+        let shown_counts = self.shown_counts(layout).is_some();
+        let inline_counts = layout.inline_counts() && shown_counts;
         let Self {
             pr,
             counts,
@@ -212,12 +213,15 @@ impl RowBadge {
                         ))
                     }),
             )
-            .when_some(counts.filter(|_| !inline_counts), |column, badge| {
-                column.child(
-                    counts_element(key, &badge, glyph_width(font), chip_icon(font), theme)
-                        .h(px(line_height(font))),
-                )
-            })
+            .when_some(
+                counts.filter(|_| shown_counts && !inline_counts),
+                |column, badge| {
+                    column.child(
+                        counts_element(key, &badge, glyph_width(font), chip_icon(font), theme)
+                            .h(px(line_height(font))),
+                    )
+                },
+            )
     }
 }
 

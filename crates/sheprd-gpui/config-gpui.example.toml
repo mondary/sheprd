@@ -96,6 +96,11 @@ show_repository_icons = true
 # it; Herdr's `ui.status_indicators` stays the terminal client's. Working always
 # moves. Also under Settings > Appearance > Indicators.
 # status_icons = "dots"
+
+# The right-hand panel of changed files, always beside the terminals. It lists
+# the focused local checkout's uncommitted files and follows its Git status;
+# toggle it with `sheprd config set show_changes_panel true`.
+# show_changes_panel = false
 # Draw a bar on the leading edge of each working, done, or blocked row, with
 # any set. Also under Settings > Appearance > Indicators.
 # edge_rail = false
