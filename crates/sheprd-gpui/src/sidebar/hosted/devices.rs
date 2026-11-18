@@ -203,7 +203,11 @@ impl SheprdWindow {
             let front = selected
                 .then(|| Sessions::front_of(keeper, session, kept_front))
                 .flatten();
-            for (row, child, group) in visible_workspace_entries(&session.workspaces, collapsed) {
+            for (row, child, group) in visible_workspace_entries(
+                &session.workspaces,
+                collapsed,
+                &self.config.sidebar_style.workspace_groups,
+            ) {
                 let workspace = &session.workspaces[row];
                 number += 1;
                 let place = Place {
@@ -215,7 +219,12 @@ impl SheprdWindow {
                     focused: front == Some(workspace.id.as_str()),
                     number,
                     status: if self.config.usage.inline {
-                        displayed_workspace_status(&session.workspaces, workspace, collapsed)
+                        displayed_workspace_status(
+                            &session.workspaces,
+                            workspace,
+                            collapsed,
+                            &self.config.sidebar_style.workspace_groups,
+                        )
                     } else {
                         workspace.status
                     },

@@ -272,12 +272,16 @@ impl SheprdWindow {
                             crate::session_model::Sessions::front_of(keeper, session, kept_front)
                         })
                         .flatten();
-                    visible_workspace_entries(&session.workspaces, collapsed_repos)
-                        .into_iter()
-                        .map(move |(index, indented, _)| {
-                            let workspace = &session.workspaces[index];
-                            (workspace, indented, front == Some(workspace.id.as_str()))
-                        })
+                    visible_workspace_entries(
+                        &session.workspaces,
+                        collapsed_repos,
+                        &self.config.sidebar_style.workspace_groups,
+                    )
+                    .into_iter()
+                    .map(move |(index, indented, _)| {
+                        let workspace = &session.workspaces[index];
+                        (workspace, indented, front == Some(workspace.id.as_str()))
+                    })
                 })
                 .collect();
             for (position, (workspace, indented, focused)) in rows.into_iter().enumerate() {

@@ -60,10 +60,14 @@ impl SheprdWindow {
                 sessions
                     .each()
                     .flat_map(|session| {
-                        visible_workspace_entries(&session.workspaces, collapsed)
-                            .into_iter()
-                            .map(|(row, _, _)| (index, session.workspaces[row].id.clone()))
-                            .collect::<Vec<_>>()
+                        visible_workspace_entries(
+                            &session.workspaces,
+                            collapsed,
+                            &self.config.sidebar_style.workspace_groups,
+                        )
+                        .into_iter()
+                        .map(|(row, _, _)| (index, session.workspaces[row].id.clone()))
+                        .collect::<Vec<_>>()
                     })
                     .collect::<Vec<_>>()
             })

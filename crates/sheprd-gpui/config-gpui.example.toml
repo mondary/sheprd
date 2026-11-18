@@ -433,6 +433,15 @@ size = 12
 # filter.
 # coordinator_suffix = "-coord"
 
+# Fold the workspaces opened directly inside these folders beneath the
+# workspace opened on the folder itself. The folder is not a synthetic row:
+# open its own workspace (with the coordinator tabs, for example), then open
+# one workspace per child project. Folding the folder row hides only those
+# direct children. Accepts absolute paths and `~/` paths.
+# workspace_groups = [
+#   "~/Documents/GitHub/PROJECTS/Chrome",
+# ]
+
 # The activity bar: an icon column at the window's left edge. Workspaces is
 # the sidebar beside the terminals; Orchestrator, Pull requests, and Issues
 # show the focused workspace's orchestrator across the window on that list.

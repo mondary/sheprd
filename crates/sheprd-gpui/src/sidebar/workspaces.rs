@@ -17,6 +17,94 @@ use crate::config::{ChangeCounts, Theme};
 use sheprd_client::protocol::AgentStatus;
 use sheprd_session::Workspace;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+#[derive(Debug)]
+struct FolderGroup {
+    head: usize,
+    children: Vec<usize>,
+    key: String,
+}
+
+fn expand_group_root(root: &str) -> Option<String> {
+    let root = root.trim().trim_end_matches(['/', '\\']);
+    let expanded = if root == "~" || root.starts_with("~/") {
+        let home = sheprd_client::local_path::home_dir()?;
+        if root == "~" {
+            home
+        } else {
+            home.join(&root[2..])
+        }
+    } else {
+        Path::new(root).to_path_buf()
+    };
+    Some(
+        expanded
+            .to_string_lossy()
+            .trim_end_matches(['/', '\\'])
+            .to_owned(),
+    )
+}
+
+fn folder_group_key(root: &str) -> String {
+    format!("folder:{root}")
+}
+
+fn trim_group_path(path: &str) -> &str {
+    let trimmed = path.trim().trim_end_matches(['/', '\\']);
+    if trimmed.is_empty() && path.starts_with('/') {
+        "/"
+    } else {
+        trimmed
+    }
+}
+
+/// Open workspaces directly beneath configured folders, grouped beneath the
+/// workspace opened on each folder itself. The folder workspace is the
+/// selectable, foldable head; the children are ordinary workspaces and keep
+/// their own daemon ids.
+fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup> {
+    let mut ordered_roots: Vec<String> = roots
+        .iter()
+        .filter_map(|root| expand_group_root(root))
+        .collect();
+    ordered_roots.sort_by_key(|root| std::cmp::Reverse(root.len()));
+    ordered_roots.dedup();
+    let mut claimed = HashSet::new();
+    let mut groups = Vec::new();
+    for root in ordered_roots {
+        let Some(head) = workspaces.iter().position(|workspace| {
+            trim_group_path(&workspace.cwd) == root && !claimed.contains(&root)
+        }) else {
+            continue;
+        };
+        let children: Vec<_> = workspaces
+            .iter()
+            .enumerate()
+            .filter(|(index, workspace)| {
+                *index != head
+                    && !claimed.contains(trim_group_path(&workspace.cwd))
+                    && Path::new(&workspace.cwd)
+                        .parent()
+                        .is_some_and(|parent| trim_group_path(&parent.to_string_lossy()) == root)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if children.is_empty() {
+            continue;
+        }
+        claimed.insert(root.clone());
+        for &child in &children {
+            claimed.insert(trim_group_path(&workspaces[child].cwd).to_owned());
+        }
+        groups.push(FolderGroup {
+            head,
+            children,
+            key: folder_group_key(&root),
+        });
+    }
+    groups
+}
 
 /// The repositories that form a group: those with at least one parent and at
 /// least one linked worktree among `workspaces`.
@@ -77,23 +165,51 @@ pub(crate) fn workspace_entries(workspaces: &[Workspace]) -> Vec<(usize, bool)> 
 pub(super) fn visible_workspace_entries(
     workspaces: &[Workspace],
     collapsed: &HashSet<String>,
+    workspace_groups: &[String],
 ) -> Vec<(usize, bool, Option<String>)> {
     let grouped = grouped_keys(workspaces);
-    workspace_entries(workspaces)
-        .into_iter()
-        .filter_map(|(index, child)| {
-            let key = workspaces[index]
-                .worktree
-                .as_ref()
-                .map(|tree| tree.key.as_str())
-                .filter(|key| grouped.contains(key));
-            if child && key.is_some_and(|key| collapsed.contains(key)) {
-                return None;
-            }
-            let group = key.filter(|_| !child).map(str::to_owned);
-            Some((index, child, group))
+    let folders = folder_groups(workspaces, workspace_groups);
+    let folder_head = folders
+        .iter()
+        .enumerate()
+        .map(|(group, folder)| (folder.head, group))
+        .collect::<HashMap<_, _>>();
+    let folder_child = folders
+        .iter()
+        .enumerate()
+        .flat_map(|(group, folder)| {
+            folder
+                .children
+                .iter()
+                .copied()
+                .map(move |child| (child, group))
         })
-        .collect()
+        .collect::<HashMap<_, _>>();
+    let mut entries = Vec::new();
+    for (index, child) in workspace_entries(workspaces) {
+        if folder_child.contains_key(&index) {
+            continue;
+        }
+        if let Some(&group) = folder_head.get(&index) {
+            let folder = &folders[group];
+            entries.push((folder.head, false, Some(folder.key.clone())));
+            if !collapsed.contains(&folder.key) {
+                entries.extend(folder.children.iter().map(|&child| (child, true, None)));
+            }
+            continue;
+        }
+        let key = workspaces[index]
+            .worktree
+            .as_ref()
+            .map(|tree| tree.key.as_str())
+            .filter(|key| grouped.contains(key));
+        if child && key.is_some_and(|key| collapsed.contains(key)) {
+            continue;
+        }
+        let group = key.filter(|_| !child).map(str::to_owned);
+        entries.push((index, child, group));
+    }
+    entries
 }
 
 /// Cached pull request, change counts, dirty, note, and teleported marks for a worktree row, if
@@ -213,26 +329,44 @@ pub(super) fn displayed_workspace_status(
     workspaces: &[Workspace],
     workspace: &Workspace,
     collapsed: &HashSet<String>,
+    workspace_groups: &[String],
 ) -> AgentStatus {
-    let Some(worktree) = workspace
+    let worktree_status = workspace
         .worktree
         .as_ref()
-        .filter(|worktree| !worktree.linked)
-    else {
-        return workspace.status;
-    };
-    if !collapsed.contains(&worktree.key) {
-        return workspace.status;
-    }
-    workspaces
-        .iter()
-        .filter(|candidate| {
-            candidate
-                .worktree
-                .as_ref()
-                .is_some_and(|candidate| candidate.key == worktree.key)
+        .filter(|worktree| !worktree.linked && collapsed.contains(&worktree.key))
+        .map(|worktree| {
+            workspaces
+                .iter()
+                .filter(|candidate| {
+                    candidate
+                        .worktree
+                        .as_ref()
+                        .is_some_and(|candidate| candidate.key == worktree.key)
+                })
+                .map(|candidate| candidate.status)
+                .max_by_key(|status| status_priority(*status))
+                .unwrap_or(workspace.status)
         })
-        .map(|candidate| candidate.status)
-        .max_by_key(|status| status_priority(*status))
-        .unwrap_or(workspace.status)
+        .unwrap_or(workspace.status);
+    folder_groups(workspaces, workspace_groups)
+        .into_iter()
+        .find(|group| {
+            group.head
+                == workspaces
+                    .iter()
+                    .position(|item| item.id == workspace.id)
+                    .unwrap_or(usize::MAX)
+        })
+        .filter(|group| collapsed.contains(&group.key))
+        .map(|group| {
+            group
+                .children
+                .into_iter()
+                .map(|index| workspaces[index].status)
+                .chain(std::iter::once(workspace.status))
+                .max_by_key(|status| status_priority(*status))
+                .unwrap_or(workspace.status)
+        })
+        .unwrap_or(worktree_status)
 }

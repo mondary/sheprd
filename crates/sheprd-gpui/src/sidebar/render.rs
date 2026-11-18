@@ -236,7 +236,11 @@ impl SheprdWindow {
                     .then(|| crate::session_model::Sessions::front_of(keeper, session, kept_front))
                     .flatten();
                 let workspaces = &session.workspaces;
-                let entries = visible_workspace_entries(workspaces, collapsed_repos);
+                let entries = visible_workspace_entries(
+                    workspaces,
+                    collapsed_repos,
+                    &self.config.sidebar_style.workspace_groups,
+                );
                 let drag = self.workspace_drag.as_ref().filter(|drag| {
                     selected && drag.keeper == keeper && drag.previewing(workspaces)
                 });
@@ -333,7 +337,12 @@ impl SheprdWindow {
                     let folds = fold.as_ref().map(|fold| fold.collapsed).zip(fold_toggle);
                     let label = workspace_label(workspace, indented);
                     let shown_status = if self.config.usage.inline {
-                        displayed_workspace_status(workspaces, workspace, collapsed_repos)
+                        displayed_workspace_status(
+                            workspaces,
+                            workspace,
+                            collapsed_repos,
+                            &self.config.sidebar_style.workspace_groups,
+                        )
                     } else {
                         workspace.status
                     };

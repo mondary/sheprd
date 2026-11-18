@@ -1215,6 +1215,13 @@ placement** in **Settings > Sidebar**, to list each agent under the workspace
 it runs in instead; Spaces then takes the full sidebar height. The collapsed
 rail keeps its own agents section either way.
 
+`[sidebar] workspace_groups` folds a folder's child workspaces beneath the
+workspace opened on the folder itself. For example, opening
+`~/Projects/Chrome` and one workspace for each project directly inside it,
+then setting `workspace_groups = ["~/Projects/Chrome"]`, draws one Chrome row
+with those project workspaces indented below it. Its arrow folds or unfolds
+exactly those direct children; linked worktrees keep their existing grouping.
+
 A search field at the top of the sidebar finds devices, worktrees, and
 branches by name; while it holds text, results grouped by kind replace the
 spaces list. Up and Down move through them, Enter opens one, and Escape

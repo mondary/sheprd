@@ -67,7 +67,7 @@ fn every_plain_checkout_is_a_parent_and_only_linked_worktrees_form_groups() {
     assert_eq!(workspace_entries(&workspaces), flat);
     let none = std::collections::HashSet::new();
     assert!(
-        super::super::visible_workspace_entries(&workspaces, &none)
+        super::super::visible_workspace_entries(&workspaces, &none, &[])
             .iter()
             .all(|entry| entry.2.is_none())
     );
@@ -86,7 +86,7 @@ fn every_plain_checkout_is_a_parent_and_only_linked_worktrees_form_groups() {
     );
     // Each parent folds the group; folding hides only linked worktrees.
     for collapsed in [none.clone(), ["/repo/.git".to_owned()].into()] {
-        let entries = super::super::visible_workspace_entries(&workspaces, &collapsed);
+        let entries = super::super::visible_workspace_entries(&workspaces, &collapsed, &[]);
         let groups: Vec<_> = entries
             .iter()
             .filter(|entry| entry.2.as_deref() == Some("/repo/.git"))
@@ -141,7 +141,7 @@ fn collapse_uses_repository_identity_without_mutating_selection() {
     workspaces[4].label = "renamed".into();
     let before = workspaces.clone();
     let collapsed = std::collections::HashSet::from([layout_tests::REPO_KEY.into()]);
-    let entries = super::super::visible_workspace_entries(&workspaces, &collapsed);
+    let entries = super::super::visible_workspace_entries(&workspaces, &collapsed, &[]);
     assert_eq!(
         entries.iter().map(|entry| entry.0).collect::<Vec<_>>(),
         vec![0, 1, 2, 3, 6]
@@ -150,19 +150,19 @@ fn collapse_uses_repository_identity_without_mutating_selection() {
     assert_eq!(workspaces, before);
     workspaces[3].label = "renamed".into();
     assert_eq!(
-        super::super::visible_workspace_entries(&workspaces, &collapsed).len(),
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &[]).len(),
         5
     );
     workspaces.remove(5);
     workspaces.remove(4);
     assert!(
-        super::super::visible_workspace_entries(&workspaces, &collapsed)
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &[])
             .iter()
             .all(|entry| entry.2.is_none())
     );
     workspaces.remove(3);
     assert_eq!(
-        super::super::visible_workspace_entries(&workspaces, &collapsed).len(),
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &[]).len(),
         4
     );
 }
@@ -180,4 +180,53 @@ fn child_labels_follow_upstream_custom_label_and_branch_rules() {
     workspace.custom_label = false;
     workspace.branch = None;
     assert_eq!(workspace_label(&workspace, true), "herdr");
+}
+
+#[test]
+fn configured_folder_groups_nest_direct_project_workspaces_and_collapse_them() {
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(4)).workspaces;
+    for workspace in &mut workspaces {
+        workspace.worktree = None;
+    }
+    let root = "/work/Chrome";
+    workspaces[0].cwd = root.into();
+    workspaces[0].label = "Chrome".into();
+    workspaces[1].cwd = "/work/Chrome/PKshortcuts".into();
+    workspaces[1].label = "PKshortcuts".into();
+    workspaces[1].custom_label = true;
+    workspaces[2].cwd = "/work/Chrome/PKtraduction".into();
+    workspaces[2].label = "PKtraduction".into();
+    workspaces[2].custom_label = true;
+    workspaces[3].cwd = "/work/Other".into();
+    let roots = [root.to_owned()];
+    let open = super::super::visible_workspace_entries(&workspaces, &Default::default(), &roots);
+    assert_eq!(
+        open,
+        vec![
+            (0, false, Some("folder:/work/Chrome".into())),
+            (1, true, None),
+            (2, true, None),
+            (3, false, None),
+        ]
+    );
+    let collapsed = std::collections::HashSet::from(["folder:/work/Chrome".into()]);
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &roots),
+        vec![
+            (0, false, Some("folder:/work/Chrome".into())),
+            (3, false, None)
+        ]
+    );
+    workspaces[0].status = AgentStatus::Idle;
+    workspaces[1].status = AgentStatus::Blocked;
+    workspaces[2].status = AgentStatus::Working;
+    assert_eq!(
+        super::super::workspaces::displayed_workspace_status(
+            &workspaces,
+            &workspaces[0],
+            &collapsed,
+            &roots,
+        ),
+        AgentStatus::Blocked
+    );
 }
