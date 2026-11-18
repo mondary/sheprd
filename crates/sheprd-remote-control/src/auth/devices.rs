@@ -63,6 +63,10 @@ pub(crate) struct DeviceRecord {
     /// as on, as a new pairing defaults to.
     #[serde(default = "share_github_default")]
     pub(crate) share_github: bool,
+    /// The SSH key of a desktop let in over SSH through the relays: its
+    /// relay sessions reach the SSH server rather than the API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) ssh: Option<crate::ssh_access::SshKey>,
 }
 
 fn share_github_default() -> bool {
@@ -180,6 +184,7 @@ impl Devices {
             relay: device.relay,
             passkey: device.passkey,
             share_github,
+            ssh: device.ssh,
         });
         self.save_or_undo(|devices| {
             devices.records.pop();

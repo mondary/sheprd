@@ -31,6 +31,7 @@ pub mod private_endpoint;
 pub mod private_file;
 mod process;
 mod queue;
+pub mod relay_host;
 mod remote_host;
 mod script;
 pub mod scrollback;

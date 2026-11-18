@@ -10937,8 +10937,10 @@ dependencies = [
  "sheprd-client",
  "sheprd-core-client",
  "sheprd-memory",
+ "sheprd-t3",
  "tempfile",
  "thiserror 2.0.21",
+ "tungstenite 0.30.0",
  "unicode-width",
  "url",
  "uuid",
@@ -11488,6 +11490,7 @@ dependencies = [
  "getrandom 0.4.3",
  "gix",
  "hkdf 0.13.0",
+ "http-body-util",
  "hyper",
  "hyper-util",
  "if-addrs",
@@ -11496,6 +11499,7 @@ dependencies = [
  "p256 0.14.0",
  "pulldown-cmark",
  "qrcode",
+ "quinn",
  "rcgen",
  "roxmltree 0.21.2",
  "rustix",
@@ -11542,6 +11546,23 @@ dependencies = [
  "serde_json",
  "sheprd-backend",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "sheprd-t3"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sheprd-chat-protocol",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tungstenite 0.30.0",
+ "ureq",
+ "url",
+ "uuid",
 ]
 
 [[package]]

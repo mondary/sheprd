@@ -8,6 +8,7 @@ pub mod display;
 mod endpoint;
 mod error;
 mod frame;
+pub mod handoff;
 mod harnesses;
 mod media;
 mod model;

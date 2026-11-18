@@ -249,6 +249,17 @@ phone check it again. Because
 the phone signs, the near computer cannot attach keys to a device it does
 not hold, and this works for a computer the phone paired directly too.
 
+Another computer's Sheprd can pair the way a phone does, over Bluetooth,
+when the two share no network (`docs/relay-plan.md`, Adding a nearby
+Sheprd from another network). `sheprd-remote-control desktop-pair` runs
+the phone's side of the code exchange, with Sheprd carrying its frames on
+stdio, then claims through this computer's relays with an `ssh-ed25519`
+key. On Allow, this daemon adds that key to `~/.ssh/authorized_keys`,
+restricted to loopback and marked with the device's ID (`ssh_access`), and
+splices that device's relay sessions to the local SSH server instead of
+serving it the API. Revoking the device removes the line. `relay-connect`
+is the `ProxyCommand` the adding side's `ssh` runs.
+
 The pairing QR prefers a Tailscale address when one is available, then a LAN
 address. The desktop dialog highlights the Tailscale connection and reveals
 alternatives under **Other addresses**. Each address names its interfaces on

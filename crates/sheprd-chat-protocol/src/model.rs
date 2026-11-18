@@ -8,10 +8,12 @@ use serde::{Deserialize, Serialize};
 use crate::{Author, CommandId, Image};
 
 mod activity;
+mod question;
 mod question_answers;
 pub use activity::{
     Activity, ActivityKind, ActivityState, MAX_ACTIVITIES, MAX_ACTIVITY_TEXT, Running,
 };
+pub use question::{MAX_ANSWER_TEXT, MAX_QUESTION_CHOICES, Question, QuestionOption};
 pub use question_answers::{MAX_QUESTION_ANSWERS, MAX_QUESTION_TEXT, valid_question_answers};
 
 /// An entry's identity, assigned by the program in increasing order.
@@ -44,8 +46,10 @@ pub struct Transcript {
     pub commands: Vec<SlashCommand>,
     #[serde(default)]
     pub entries: Vec<Entry>,
-    /// The agents this chat may still switch to; `None` once its first
-    /// prompt reached the agent, or for a chat started without `--choose`.
+    /// The agents this chat may switch to while its agent is idle; `None`
+    /// for a chat started without `--choose`. Programs before agents could
+    /// change mid-conversation set it to `None` once a prompt reached the
+    /// agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harnesses: Option<crate::Harnesses>,
     #[serde(default)]
@@ -340,6 +344,10 @@ pub struct Permission {
     pub call_id: Option<String>,
     pub id: PermissionId,
     pub options: Vec<PermissionOption>,
+    /// The question in full, when the request is one the agent asked with
+    /// choices; answered with [`Command::AnswerQuestion`](crate::Command::AnswerQuestion).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<Question>,
     pub title: String,
 }
 

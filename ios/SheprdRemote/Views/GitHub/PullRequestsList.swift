@@ -2,48 +2,84 @@ import SheprdGitHub
 import SheprdRemoteCore
 import SwiftUI
 
-/// What the Workspaces tab lists: the computers' workspaces, or the
-/// account's pull requests across GitHub.
-enum WorkspacesShows: String {
-    case workspaces, pullRequests
-
-    static let key = "workspacesShows"
-}
-
-/// The switch on top of the Workspaces tab.
-struct WorkspacesShowsPicker: View {
-    @Binding var shows: WorkspacesShows
-
-    var body: some View {
-        Section {
-            Picker("Show", selection: $shows.animation(.snappy)) {
-                Text("Workspaces").tag(WorkspacesShows.workspaces)
-                Text("Pull Requests").tag(WorkspacesShows.pullRequests)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
-        }
-    }
-}
-
 /// The pull requests the github.com account wrote, and those asking for its
 /// review, on any repository, including ones no computer has a workspace
 /// for. Each says where its branch is checked out. Review requests come
 /// first while there are any: they wait on the person.
+///
+/// The Pull Requests tab, beside Workspaces: it reads the lists while it is
+/// in front, as the Workspaces tab reads its badges.
 struct PullRequestsList: View {
     @Environment(AppModel.self) private var model
-    @Binding var shows: WorkspacesShows
     /// A workspace opened from a row's menu.
     @State private var opened: WorkspaceKey?
+    /// Words a pull request's title, repository, number, author, or branch
+    /// must hold to be listed.
+    @State private var query = ""
+    @AppStorage(PullRequestSort.key) private var sort = PullRequestSort.updated
+
+    /// Where each section's header is, so a jump from the edge index can
+    /// clear the search field, as on Home.
+    @State private var headerJump = HeaderJump()
 
     private var direct: GitHubDirect { GitHubDirect.shared }
 
+    /// Pull requests listed before the edge index shows: about a screenful.
+    private static let indexedFrom = 12
+
+    /// The two sections, by the id their header and rows scroll by: a
+    /// list scrolls to a row by its `ForEach` id, so the rows are listed
+    /// by these, as a pull request may be in both sections.
+    private enum Part: String {
+        case requested, mine
+
+        var header: String { "pulls/\(rawValue)" }
+        func row(_ pull: GitHubSearchPull) -> String { "pulls/\(rawValue)/\(pull.id)" }
+    }
+
+    /// A pull request as one section lists it, identified as the edge
+    /// index scrolls to it.
+    private struct Listed: Identifiable {
+        var part: Part
+        var pull: GitHubSearchPull
+        var id: String { part.row(pull) }
+    }
+
+    /// The lists as shown: searched, then sorted.
+    private var shown: PullRequestLists? {
+        direct.lists.lists?.matching(query).sorted(sort)
+    }
+
     var body: some View {
+        ScrollViewReader { proxy in
+            list
+                .overlay(alignment: .trailing) {
+                    if let shown, shown.mine.count + shown.reviewRequested.count >= Self.indexedFrom {
+                        EdgeIndexStrip(parts: indexParts(shown)) { jump(to: $0, in: shown, proxy: proxy) }
+                            .padding(.vertical, 24)
+                            .padding(.trailing, 2)
+                    }
+                }
+        }
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Title, repository, author, branch")
+        // No title, as Home and Workspaces have none; the search heads it.
+        .navigationBarTitleDisplayMode(.inline)
+        #if DEBUG
+        .task { if let text = UserDefaults.standard.string(forKey: "pullRequestSearch") { query = text } }
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { PullRequestSortMenu(sort: $sort) }
+        }
+        .gitHubRefresh(showsLists: true)
+        .navigationDestination(for: PullRequestRoute.self) { route in
+            PullRequestDetailScreen(route: route, title: direct.title(for: route))
+        }
+        .navigationDestination(item: $opened) { WorkspaceScreen(key: $0) }
+    }
+
+    private var list: some View {
         List {
-            WorkspacesShowsPicker(shows: $shows)
-            if let lists = direct.lists.lists {
+            if let lists = shown {
                 if case .failed = direct.lists {
                     Section {
                         Label("GitHub could not be read. These may be out of date.", systemImage: "exclamationmark.triangle")
@@ -62,36 +98,55 @@ struct PullRequestsList: View {
         .listSectionSpacing(14)
         .refreshable { await direct.refreshLists(source: model.fleet.gitHubLenders) }
         .overlay { empty }
-        .navigationDestination(for: PullRequestRoute.self) { route in
-            PullRequestDetailScreen(route: route, title: direct.title(for: route))
+    }
+
+    /// The sections as the edge index reads them: Review requested, when
+    /// any ask, then Mine.
+    private func indexParts(_ lists: PullRequestLists) -> [EdgeIndex.Part] {
+        let parts: [(Part, String, [GitHubSearchPull])] = [
+            (.requested, "Review requested", lists.reviewRequested), (.mine, "Mine", lists.mine),
+        ]
+        return parts.filter { !$0.2.isEmpty }.map { part, title, pulls in
+            EdgeIndex.Part(target: part.header, title: title, rows: pulls.map { (part.row($0), $0.dot) })
         }
-        .navigationDestination(item: $opened) { WorkspaceScreen(key: $0) }
+    }
+
+    /// A section's first row shows its header too, as on Home.
+    private func jump(to target: String, in lists: PullRequestLists, proxy: ScrollViewProxy) {
+        let firsts = [(Part.requested, lists.reviewRequested.first), (Part.mine, lists.mine.first)]
+        let header = firsts.first { part, pull in pull.map(part.row) == target }?.0.header
+        headerJump.go(to: header ?? target, proxy: proxy)
     }
 
     @ViewBuilder private func mine(_ lists: PullRequestLists) -> some View {
         if !lists.mine.isEmpty {
             Section {
-                ForEach(lists.mine) { row($0, showsAuthor: false) }
+                ForEach(lists.mine.map { Listed(part: .mine, pull: $0) }) { row($0.pull, showsAuthor: false) }
             } header: {
-                header("Mine", shown: lists.mine.count, total: lists.mineTotal)
+                header("Mine", shown: lists.mine.count, total: lists.mineTotal, part: .mine)
             }
         }
     }
 
     @ViewBuilder private func requested(_ lists: PullRequestLists) -> some View {
         Section {
-            ForEach(lists.reviewRequested) { row($0, showsAuthor: true) }
+            ForEach(lists.reviewRequested.map { Listed(part: .requested, pull: $0) }) { row($0.pull, showsAuthor: true) }
         } header: {
-            header("Review requested", shown: lists.reviewRequested.count, total: lists.reviewRequestedTotal)
+            header("Review requested", shown: lists.reviewRequested.count, total: lists.reviewRequestedTotal, part: .requested)
         }
     }
 
-    private func header(_ title: String, shown: Int, total: Int) -> some View {
+    private func header(_ title: String, shown: Int, total: Int, part: Part) -> some View {
         HStack {
             Text(title)
             Spacer()
             if total > shown { Text("\(shown) of \(total)").textCase(nil) }
         }
+        // A read the person waits on shows the list's own pull-to-refresh
+        // spinner, as if they had pulled.
+        .background(RefreshSpinner(active: direct.loadingLists))
+        .id(part.header)
+        .background(HeaderMark(jump: headerJump, key: part.header))
     }
 
     private func row(_ pull: GitHubSearchPull, showsAuthor: Bool) -> some View {
@@ -120,6 +175,17 @@ struct PullRequestsList: View {
     }
 
     @ViewBuilder private var empty: some View {
+        if let lists = direct.lists.lists, !lists.isEmpty, lists.matching(query).isEmpty {
+            ContentUnavailableView.search(text: query)
+        } else if direct.loadingLists, direct.lists.lists == nil {
+            // Rather than what an earlier read said, while a new one runs.
+            LoadingPullRequests()
+        } else {
+            unloaded
+        }
+    }
+
+    @ViewBuilder private var unloaded: some View {
         switch direct.lists {
         case .noAccount:
             ContentUnavailableView {
@@ -131,7 +197,7 @@ struct PullRequestsList: View {
                     .buttonStyle(.borderedProminent)
             }
         case .unread:
-            ProgressView()
+            LoadingPullRequests()
         case let .read(lists) where lists.isEmpty:
             ContentUnavailableView("No open pull requests", systemImage: "arrow.triangle.pull",
                                    description: Text("Pull requests you opened, and those asking for your review, appear here."))
@@ -141,6 +207,38 @@ struct PullRequestsList: View {
         case .read, .failed:
             EmptyView()
         }
+    }
+}
+
+/// The order of the Pull Requests tab, at its top left as Home's is.
+private struct PullRequestSortMenu: View {
+    @Binding var sort: PullRequestSort
+
+    var body: some View {
+        Menu {
+            Picker("Sort Pull Requests", selection: $sort.animation()) {
+                ForEach(PullRequestSort.allCases) { sort in
+                    switch sort {
+                    case .updated: Label("Recently Updated", systemImage: "clock").tag(sort)
+                    case .status: Label("Status", systemImage: "exclamationmark.circle").tag(sort)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+        .accessibilityLabel("Sort pull requests")
+    }
+}
+
+/// A spinner saying the lists are being read from GitHub.
+private struct LoadingPullRequests: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text("Loading pull requests…").foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -237,5 +335,17 @@ struct IconText: View {
             Image(systemName: systemImage)
             Text(verbatim: title)
         }
+    }
+}
+
+private extension GitHubSearchPull {
+    /// Its dot on the edge index, in the agents' palette: red when it needs
+    /// the person (changes asked for, a check failing), yellow while checks
+    /// run, teal once approved, green otherwise.
+    var dot: Home.AgentStatus {
+        if reviewDecision == .changesRequested || checks.failing > 0 { return .blocked }
+        if checks.pending > 0 { return .working }
+        if reviewDecision == .approved { return .done }
+        return .idle
     }
 }

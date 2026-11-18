@@ -104,6 +104,12 @@ pub enum Command {
         option: String,
         permission: PermissionId,
     },
+    /// Answers a permission request that carries a [`Question`](crate::Question):
+    /// option labels, or the person's own words, one unless it takes several.
+    AnswerQuestion {
+        answers: Vec<String>,
+        permission: PermissionId,
+    },
     SetMode {
         id: String,
     },
@@ -177,6 +183,8 @@ pub enum Rejection {
     UnknownPermission,
     #[error("that is not one of the request's options")]
     UnknownOption,
+    #[error("the answer is empty, too long, or has more choices than the question takes")]
+    InvalidAnswer,
     #[error("the agent has no such mode")]
     UnknownMode,
     #[error("the agent has no such setting, or it does not take that value")]
@@ -193,7 +201,10 @@ pub enum Rejection {
     UnknownFile,
     #[error("that work has already ended or cannot be stopped")]
     UnknownActivity,
-    #[error("the chat's agent can no longer change")]
+    /// The chat cannot switch agents now: its agent is in a turn, or, from
+    /// a program before agents could change mid-conversation, a prompt
+    /// already reached it.
+    #[error("the chat's agent cannot change while it is working")]
     AgentFixed,
     #[error("that agent is not installed where the chat runs")]
     AgentMissing,

@@ -180,6 +180,10 @@ impl SheprdWindow {
             if endpoint.enabled
                 && !endpoint.detached
                 && !endpoint.suspended()
+                // The core fallback owns this host now. Retrying an absent
+                // Herdr 1 resets the window and drops its working core view.
+                // An explicit reconnect can probe a newly installed Herdr 1.
+                && !endpoint.live.missing_installation
                 && endpoint.connection.handle.is_none()
                 && Instant::now() >= endpoint.retry_at
             {

@@ -310,11 +310,23 @@ impl SheprdWindow {
                 code,
                 app,
                 passkey,
+                ssh,
                 answer,
                 ..
-            } => self.pairing_claim(device_name, code, (app.as_deref(), *passkey), *answer, cx),
-            Phase::Approved { device_name } => self.pairing_message(
-                &fl!("remote-pair-approved", device = name(device_name)),
+            } => self.pairing_claim(
+                device_name,
+                code,
+                (app.as_deref(), *passkey),
+                *ssh,
+                *answer,
+                cx,
+            ),
+            Phase::Approved { device_name, ssh } => self.pairing_message(
+                &if *ssh {
+                    fl!("remote-pair-approved-ssh", device = name(device_name))
+                } else {
+                    fl!("remote-pair-approved", device = name(device_name))
+                },
                 &fl!("remote-pair-approved-detail"),
                 Some(("remote-pair-done", fl!("remote-pair-done"), Action::Close)),
                 cx,
@@ -512,6 +524,7 @@ impl SheprdWindow {
         device_name: &str,
         code: &str,
         (app, passkey): (Option<&str>, bool),
+        ssh: bool,
         answer: Option<Answer>,
         cx: &mut Context<Self>,
     ) -> Div {
@@ -519,7 +532,11 @@ impl SheprdWindow {
         let waiting = answer.is_some();
         // The device's name, bold, inside the sentence that asks.
         let device = name(device_name);
-        let asks = fl!("remote-pair-wants", device = device.clone());
+        let asks = if ssh {
+            fl!("remote-pair-wants-ssh", device = device.clone())
+        } else {
+            fl!("remote-pair-wants", device = device.clone())
+        };
         let bold = asks.find(&device).map(|start| start..start + device.len());
         div()
             .debug_selector(|| "remote-pair-claim".into())
@@ -560,11 +577,21 @@ impl SheprdWindow {
                         .child(fl!("remote-pair-passkey")),
                 )
             })
-            .child(
-                div()
-                    .text_color(rgb(theme.subtext()))
-                    .child(fl!("remote-pair-same-code")),
-            )
+            // Allowing another computer writes `authorized_keys`, so the
+            // user is told what Allow does before giving it.
+            .when(ssh, |claim| {
+                claim.child(
+                    div()
+                        .debug_selector(|| "remote-pair-ssh".into())
+                        .text_color(rgb(theme.subtext()))
+                        .child(fl!("remote-pair-ssh")),
+                )
+            })
+            .child(div().text_color(rgb(theme.subtext())).child(if ssh {
+                fl!("remote-pair-same-code-computer")
+            } else {
+                fl!("remote-pair-same-code")
+            }))
             .child(
                 div()
                     .debug_selector(|| "remote-pair-code".into())
@@ -574,8 +601,14 @@ impl SheprdWindow {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(spaced(code)),
             )
-            .children(self.pairing_hosts(!waiting, cx))
-            .children(self.pairing_share_github(!waiting, cx))
+            // A computer opens terminals; the other hosts and the GitHub
+            // sign-in are a phone's.
+            .children((!ssh).then(|| self.pairing_hosts(!waiting, cx)).flatten())
+            .children(
+                (!ssh)
+                    .then(|| self.pairing_share_github(!waiting, cx))
+                    .flatten(),
+            )
             .child(
                 div()
                     .flex()

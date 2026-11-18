@@ -1,8 +1,8 @@
 //! Which agent a chat runs, while its user may still choose another.
 //!
 //! A chat started with `herdr-acp --choose` offers the agents installed
-//! where it runs until its first prompt reaches the agent; after that the
-//! agent keeps the conversation, so the choice closes.
+//! where it runs whenever its agent is idle. An agent that takes over in the
+//! middle of a conversation is handed it ([`crate::handoff`]).
 
 use serde::{Deserialize, Serialize};
 

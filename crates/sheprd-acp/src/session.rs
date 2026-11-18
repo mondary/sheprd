@@ -8,6 +8,7 @@ mod agent;
 mod commands;
 mod harness;
 mod pictures;
+mod thread;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -92,6 +93,8 @@ pub(crate) enum Flow {
     Launch {
         agent: Agent,
         harness: HarnessId,
+        /// The agent's own earlier session, which it continues.
+        load: Option<String>,
     },
 }
 
@@ -120,7 +123,7 @@ pub(crate) enum Update {
 
 pub(crate) struct Config {
     pub agent: String,
-    /// The agents a client may switch to before the first prompt, as
+    /// The agents a client may switch to while the agent is idle, as
     /// `--choose` asks; `None` keeps the agent the chat started with.
     pub choices: Option<Vec<Agent>>,
     pub cwd: PathBuf,
@@ -197,6 +200,7 @@ pub(crate) struct Session<R: FnMut(Update)> {
     report: R,
     seq: u64,
     subscribers: Vec<Subscriber>,
+    thread: thread::Thread,
     transcript: Transcript,
     turn: Option<i64>,
 }
@@ -217,6 +221,7 @@ impl<R: FnMut(Update)> Session<R> {
             available,
             current: config.harness,
         });
+        let thread = thread::Thread::new(config.harness, &transcript.entries);
         let projector = transcript
             .entries
             .last()
@@ -257,6 +262,7 @@ impl<R: FnMut(Update)> Session<R> {
             report,
             seq: 0,
             subscribers: Vec::new(),
+            thread,
             transcript,
             turn: None,
         }
@@ -317,6 +323,7 @@ impl<R: FnMut(Update)> Session<R> {
             Some(agent) => Flow::Launch {
                 agent,
                 harness: self.harness,
+                load: self.config.load.clone(),
             },
             None => Flow::Continue,
         }

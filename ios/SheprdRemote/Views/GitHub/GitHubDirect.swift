@@ -11,6 +11,16 @@ import SwiftUI
 final class GitHubDirect {
     static let shared = GitHubDirect()
 
+    /// Starts with the lists last read, from the cache, off the main
+    /// thread; a read that answered first wins.
+    private init() {
+        Task {
+            let cached = await Task.detached(priority: .userInitiated) { Cache.shared.pullRequestLists() }.value
+            guard let cached, case .unread = lists else { return }
+            lists = .read(cached)
+        }
+    }
+
     /// The pull request lists, as last read.
     enum Lists: Equatable {
         case unread
@@ -30,6 +40,9 @@ final class GitHubDirect {
 
     private(set) var badges = DirectBadges()
     private(set) var lists = Lists.unread
+    /// Whether a read the person is waiting on runs: the first since the
+    /// lists appeared, not the quiet one each minute after it.
+    private(set) var loadingLists = false
     /// The phone's own github.com login, while signed in.
     private(set) var ownLogin: String?
     @ObservationIgnored private var watching: Task<Void, Never>?
@@ -88,6 +101,7 @@ final class GitHubDirect {
         signOuts += 1
         badges = DirectBadges()
         lists = .unread
+        Cache.shared.save(pullRequestLists: nil)
         Task { await reader.forgetAnswers() }
     }
 
@@ -108,17 +122,26 @@ final class GitHubDirect {
         if next != badges { badges = next }
     }
 
-    /// Reads the pull request lists.
-    func refreshLists(source: Lenders) async {
+    /// Reads the pull request lists; `shown` when the person is waiting on
+    /// it, so the lists say they are loading.
+    func refreshLists(source: Lenders, shown: Bool = false) async {
         guard !readingLists else { return }
         readingLists = true
-        defer { readingLists = false }
+        if shown { loadingLists = true }
+        defer {
+            readingLists = false
+            loadingLists = false
+        }
         let mine = signOuts
         let read = await reader.pullRequestLists(source: source)
         guard mine == signOuts, !Task.isCancelled else { return }
         switch read {
-        case let .found(found): lists = .read(found)
-        case .noAccount: lists = .noAccount
+        case let .found(found):
+            lists = .read(found)
+            Cache.shared.save(pullRequestLists: found)
+        case .noAccount:
+            lists = .noAccount
+            Cache.shared.save(pullRequestLists: nil)
         case .failed: lists = .failed(last: lists.lists)
         }
     }
@@ -127,6 +150,13 @@ final class GitHubDirect {
     /// Sample answers for screenshots, with no computer or account.
     func showSample(_ lists: PullRequestLists) {
         self.lists = .read(lists)
+    }
+
+    /// Holds the lists as loading for `seconds`, as a read would.
+    func showSampleLoading(for seconds: Int) async {
+        loadingLists = true
+        try? await Task.sleep(for: .seconds(seconds))
+        loadingLists = false
     }
     #endif
 }
@@ -169,13 +199,19 @@ private struct GitHubRefresh: ViewModifier {
                 #if DEBUG
                 if GitHubSample.enabled {
                     direct.showSample(GitHubSample.lists)
+                    // `-gitHubDemoLoading N` holds the lists loading N seconds.
+                    let seconds = UserDefaults.standard.integer(forKey: "gitHubDemoLoading")
+                    if showsLists, seconds > 0 { await direct.showSampleLoading(for: seconds) }
                     return
                 }
                 #endif
+                // The first read once the lists show is one the person waits on.
+                var first = true
                 while !Task.isCancelled {
                     let source = model.fleet.gitHubLenders
                     if showsLists {
-                        await direct.refreshLists(source: source)
+                        await direct.refreshLists(source: source, shown: first)
+                        first = false
                     } else {
                         let shown = model.fleet.visibleWorkspaces { model.collapsed.computers.contains($0) }
                         await direct.refreshBadges(shown, source: source)

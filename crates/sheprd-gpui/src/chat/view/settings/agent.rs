@@ -1,5 +1,5 @@
-//! The composer's agent button: while a chat may still switch agents
-//! (`sheprd-acp --choose`, until its first prompt), it names the agent
+//! The composer's agent button: in a chat that may switch agents
+//! (`sheprd-acp --choose`, whenever its agent is idle), it names the agent
 //! running and opens a menu of the others installed where the chat runs.
 
 use super::super::super::chats::{ChatPane, Menu};
@@ -96,7 +96,8 @@ impl SheprdWindow {
 
     /// Why the chat runs another agent than the one last used, or that the
     /// one it runs is short of plan room and another is not, offering to
-    /// switch: a line over the composer while the chat may still switch.
+    /// switch: a line over the composer of a chat that may switch. Why it
+    /// started with another agent matters only until the first prompt.
     pub(in crate::chat::view) fn render_chat_agent_advice(
         &self,
         chat: &ChatPane,
@@ -111,9 +112,18 @@ impl SheprdWindow {
             .debug_selector(|| "chat-agent-advice".into())
             .text_size(size)
             .text_color(rgb(self.theme.subtext()));
+        let transcript = chat.session.transcript();
+        // Trimming may drop every prompt of a long conversation, which a
+        // truncated transcript still had.
+        let fresh = !transcript.truncated
+            && !transcript
+                .entries
+                .iter()
+                .any(|entry| matches!(entry.kind, sheprd_chat_protocol::EntryKind::User { .. }));
         // The Agent button started this agent in place of the one last used.
         let launched = pick(&rooms, self.chats.last_started)?;
-        if launched.chosen == current
+        if fresh
+            && launched.chosen == current
             && let Some((from, room)) = launched.instead_of
             && from != current
         {

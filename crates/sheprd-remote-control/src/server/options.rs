@@ -143,6 +143,18 @@ pub enum Invocation {
         state_dir: Option<PathBuf>,
         offer: bool,
     },
+    /// Adds a nearby Sheprd as `name`, with Sheprd carrying Bluetooth on
+    /// stdio (`crate::desktop`).
+    DesktopPair {
+        state_dir: Option<PathBuf>,
+        name: String,
+    },
+    /// Carries `ssh` to a machine added over Bluetooth, `r-ID.sheprd.invalid`,
+    /// through its relays: its `ProxyCommand`.
+    RelayConnect {
+        state_dir: Option<PathBuf>,
+        host: String,
+    },
     Help,
     Version,
 }
@@ -155,6 +167,8 @@ Usage: sheprd-remote-control serve --state-dir DIR [options]
        sheprd-remote-control tags [--offer] [--state-dir DIR] [< TAGS.json]
        sheprd-remote-control shortcuts [--offer] [--state-dir DIR] [< SHORTCUTS.json]
        sheprd-remote-control relays [--offer] [--state-dir DIR] [< RELAYS.json]
+       sheprd-remote-control desktop-pair --name NAME [--state-dir DIR]
+       sheprd-remote-control relay-connect [--state-dir DIR] HOST
 
 Serves this computer's Herdr chats to paired phones over HTTPS. Sheprd
 starts it when Remote control is on.
@@ -209,6 +223,10 @@ as JSON; it needs the daemon running.
 relays --offer takes {\"source\", \"relays\"}, the relays Sheprd on
 another computer listens on, replacing what that computer shared before:
 the daemon listens on them too, beside its own [remote] relays.
+desktop-pair adds a nearby Sheprd that is on another network: Sheprd
+runs it and carries its Bluetooth frames as JSON lines on stdio. The
+other computer is then reached through its relays, and relay-connect is
+the ProxyCommand ssh runs for it.
 Their state directory defaults to the one Sheprd on this computer uses.
 ";
 
@@ -241,6 +259,9 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, Par
                 state_dir,
                 offer,
             });
+        }
+        Some(verb @ ("desktop-pair" | "relay-connect")) => {
+            return parse_desktop(verb == "desktop-pair", args);
         }
         Some("-h" | "--help") | None => return Ok(Invocation::Help),
         Some("-V" | "--version") => return Ok(Invocation::Version),
@@ -467,6 +488,48 @@ fn parse_host(
     Ok(Invocation::Revoke {
         state_dir,
         device: device.ok_or(ParseError::Missing("--device"))?,
+    })
+}
+
+/// `desktop-pair --name NAME [--state-dir DIR]` and
+/// `relay-connect [--state-dir DIR] HOST`.
+fn parse_desktop(
+    pair: bool,
+    mut args: impl Iterator<Item = OsString>,
+) -> Result<Invocation, ParseError> {
+    let (mut state_dir, mut name, mut host) = (None, None, None);
+    while let Some(arg) = args.next() {
+        let text = arg.to_str().unwrap_or_default().to_owned();
+        match text.as_str() {
+            "--state-dir" => {
+                state_dir = Some(PathBuf::from(
+                    args.next().ok_or(ParseError::Missing("--state-dir"))?,
+                ));
+            }
+            "--name" if pair => {
+                name = Some(
+                    args.next()
+                        .ok_or(ParseError::Missing("--name"))?
+                        .into_string()
+                        .map_err(|_| ParseError::Value { option: "--name" })?,
+                );
+            }
+            "-h" | "--help" => return Ok(Invocation::Help),
+            _ if !pair && host.is_none() && !text.starts_with('-') && !text.is_empty() => {
+                host = Some(text);
+            }
+            _ => return Err(ParseError::Unknown(text)),
+        }
+    }
+    if pair {
+        return Ok(Invocation::DesktopPair {
+            state_dir,
+            name: name.ok_or(ParseError::Missing("--name"))?,
+        });
+    }
+    Ok(Invocation::RelayConnect {
+        state_dir,
+        host: host.ok_or(ParseError::Missing("HOST"))?,
     })
 }
 

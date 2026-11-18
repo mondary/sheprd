@@ -52,6 +52,9 @@ pub enum Command {
     ToggleMenuBar,
     /// Shows or hides the panel of mod sections on the window's right.
     ToggleModPanel,
+    /// Collapses every host in the sidebar, or expands them all when they
+    /// all are.
+    ToggleAllHosts,
     /// Moves keyboard focus to the next of the terminal, the title bar, the
     /// sidebar, and the status bar, where Tab moves between controls.
     FocusNextRegion,
@@ -615,6 +618,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::ToggleModPanel,
         name: "toggle_mod_panel",
         message: "commands-toggle-mod-panel",
+    },
+    CommandInfo {
+        command: Command::ToggleAllHosts,
+        name: "toggle_all_hosts",
+        message: "commands-toggle-all-hosts",
     },
     CommandInfo {
         command: Command::FocusNextRegion,

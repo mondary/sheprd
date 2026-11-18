@@ -253,3 +253,35 @@ async fn a_token_from_the_network_is_refused_on_the_web_name() {
     .await;
     assert_ne!(status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn a_claim_at_the_web_name_cannot_ask_for_ssh_access() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state(dir.path());
+    let Response::Offer(offer) = control(&state, Request::Pair) else {
+        panic!("expected an offer");
+    };
+    let token = offer.url.split_once("#t=").unwrap().1;
+    let token = token.split('&').next().unwrap();
+    let key = SigningKey::from_slice(&[7; 32]).unwrap();
+    let public = key.verifying_key().to_sec1_point(false);
+    let public = URL_SAFE_NO_PAD.encode(public.as_bytes());
+    let challenge = register_challenge(
+        &URL_SAFE_NO_PAD.decode(token).unwrap(),
+        &URL_SAFE_NO_PAD.decode(&public).unwrap(),
+    );
+    let made = Authenticator::new(3).register(HOST, &challenge);
+    let mut body = json!({
+        "token": token,
+        "name": "Laptop",
+        "public_key": public,
+        "passkey": {"client_data": made.client_data, "attestation": made.attestation},
+        "ssh": {"public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"},
+    });
+    let (status, _, refused) = send_web(&state, post("/api/pair/claim", body.clone())).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused}");
+    // Refused before the token was spent: the same claim without SSH pairs.
+    body.as_object_mut().unwrap().remove("ssh");
+    let (status, _, claimed) = send_web(&state, post("/api/pair/claim", body)).await;
+    assert_eq!(status, StatusCode::OK, "{claimed}");
+}

@@ -398,7 +398,11 @@ pub(crate) fn run_owned(
                 match session.handle(input) {
                     Flow::Continue => {}
                     Flow::Exit => return (expected, current, stopping),
-                    Flow::Launch { agent, harness } => {
+                    Flow::Launch {
+                        agent,
+                        harness,
+                        load,
+                    } => {
                         let held = switch_keeper
                             .as_ref()
                             .map_or(Ok(()), |keeper| keeper.hold_for_switch());
@@ -410,7 +414,7 @@ pub(crate) fn run_owned(
                             session.launch_failed(&error);
                             continue;
                         }
-                        let next = builtin(agent, None, adapter, &cwd);
+                        let next = builtin(agent, load.as_deref(), adapter, &cwd);
                         match start(next.start, &cwd, &launcher, harness) {
                             Ok(started) => {
                                 let pid = started.process.id();

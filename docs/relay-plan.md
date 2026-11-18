@@ -1016,6 +1016,74 @@ the relay when it does not, an unlisted dial or tunnel key refused, and
 removing a line in `authorized` ending a live session. Pure tests for the
 `ProxyCommand` arguments and for parsing `status --json`.
 
+### Adding a nearby Sheprd from another network
+
+**Built.** Two computers that both run Sheprd sit side by side on different
+networks with no route between them, so neither can SSH to the other.
+Bluetooth is the trusted channel that pairs them, and the relay carries
+SSH afterwards. This is the "reuse the daemon on a host that runs Sheprd"
+shortcut: the computer being added needs `sheprd-remote-control` running
+with relays, and it needs no `sheprd-relay-agent`.
+
+```text
+Sheprd A ─ssh─▶ sheprd-remote-control relay-connect ──QUIC──▶ relay ◀──QUIC── B's daemon ─▶ 127.0.0.1:22
+                └──────────── tunnel (IK + ML-KEM-768), then SSH inside ────────────┘
+```
+
+1. **B** opens Remote control > Pair device (or `sheprd remote pair`). Its
+   Bluetooth helper advertises as it does for phones.
+2. **A** opens Add Device > Nearby Sheprd (macOS only for now). Its helper
+   scans as a central (`macos/sheprd-nearby/Central.swift`), connects to
+   each computer it finds to read `info`, and lists those that name
+   themselves, which only happens while Pair device is open.
+3. Picking one starts `sheprd-remote-control desktop-pair` (`desktop`),
+   which runs a phone's side of nearby pairing over the same `pair`
+   characteristic, with Sheprd carrying its frames on stdio
+   (`control::desktop`). The child uses the daemon's own commitment, code,
+   and sealing functions, so a man in the middle still gets one guess, and
+   both screens show the same code.
+4. The sealed offer names B's relays, route, and tunnel identity. A dials
+   the one-use pairing key on B's relays, runs the tunnel's pairing
+   handshake keyed by the sealed token, then TLS pinned to the CA
+   fingerprint the code covered, and claims with its name, its relay
+   dial and tunnel keys, and an `ssh-ed25519` key
+   (`desktop/id_ed25519`, made by `ssh-keygen`). B refuses the claim
+   before spending the token when it has no SSH server on `127.0.0.1:22`
+   (Remote Login off) or no `authorized_keys` to write (Windows).
+5. B's dialog says that another computer wants to open terminals and what
+   Allow does, and it leaves out the phone-only hosts and GitHub switches.
+   On Allow, the daemon (`ssh_access`) adds one line to
+   `~/.ssh/authorized_keys`: `from="127.0.0.1,::1",no-agent-forwarding,no-X11-forwarding`,
+   the key, then `sheprd-desktop:DEVICE`. The line is written atomically,
+   and a linked file is refused. Only B's own relay sessions reach sshd from
+   loopback, so the key is useless from the network. Revoking the device,
+   or its expiring after `device_idle_days`, removes exactly that line.
+6. A polls on the same connection. Once allowed, it learns the user to
+   log in as and B's SSH host keys, keeps the route, relays, and identity
+   in `desktop/hosts/ID.json`, and keeps the host keys in
+   `desktop/known_hosts.d/r-ID.sheprd.invalid`, a file per machine so two
+   pairings finishing at once never write the same one. ID is the route's
+   first eight bytes in hex.
+7. Sheprd checks Herdr there through the relay and saves the device as
+   `USER@r-ID.sheprd.invalid` without Herdr's CLI, because `machine add`
+   would run its own `ssh`.
+
+From then on, every `ssh` that `sheprd-client` starts for a
+`*.sheprd.invalid` target (`relay_host`) gets
+`ProxyCommand=sheprd-remote-control relay-connect --state-dir … %h`,
+that `IdentityFile` with `IdentitiesOnly`, the machine's own known hosts
+file (`UserKnownHostsFile=…/known_hosts.d/%h`, OpenSSH 8.4 or later), and
+`StrictHostKeyChecking=yes`, ahead of the user's own options.
+`.invalid` never resolves, so nothing else can reach it. `relay-connect`
+dials B's route with A's dial key on the first relay that lets it
+through. B's daemon admits that tunnel key, sees that the device has an
+SSH key, splices the session to its SSH server instead of serving the
+API, and marks the device seen.
+
+Not yet: Linux and Windows helpers that scan, sharing a relay record
+when B's relays change, and racing the relays. As with SSH machines,
+`git` and a typed `ssh` do not use the proxy.
+
 ## Deployment
 
 `crates/sheprd-relay/Dockerfile` builds a static musl binary into a

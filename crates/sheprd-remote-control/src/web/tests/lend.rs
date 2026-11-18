@@ -372,8 +372,37 @@ async fn home_names_each_workspaces_repository_and_the_accounts_lent() {
     assert!(elsewhere["workspaces"][0].get("github").is_none());
 }
 
+/// Set in the child that [`a_lent_token_never_reaches_the_log`] runs alone.
+const LOG_ALONE: &str = "SHEPRD_TEST_LEND_LOG_ALONE";
+
+/// Whether a log line has a subscriber is decided once per process, so a
+/// parallel test meeting the line first, on a thread with none, can mark it
+/// off for every thread. The check runs again in a process of its own.
 #[test]
 fn a_lent_token_never_reaches_the_log() {
+    if std::env::var_os(LOG_ALONE).is_some() {
+        return lent_token_log_alone();
+    }
+    let output = sheprd_client::new_command(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "web::tests::lend::a_lent_token_never_reaches_the_log",
+            "--test-threads=1",
+            "--nocapture",
+        ])
+        .env(LOG_ALONE, "1")
+        .output()
+        .unwrap();
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "{report}");
+    assert!(report.contains("1 passed"), "{report}");
+}
+
+fn lent_token_log_alone() {
     use std::sync::{Arc, Mutex};
     #[derive(Clone, Default)]
     struct Log(Arc<Mutex<Vec<u8>>>);
@@ -392,9 +421,13 @@ fn a_lent_token_never_reaches_the_log() {
         .with_max_level(tracing::Level::TRACE)
         .with_writer(move || writer.clone())
         .finish();
+    // While a single dispatcher is registered, tracing-core caches a
+    // callsite's interest from whichever thread registers it first, so a
+    // parallel test reaching the log line with no subscriber would cache
+    // "never" for this thread too. A second live dispatcher makes it ask
+    // every registered dispatcher instead, under its lock.
+    let _other = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     let _default = tracing::subscriber::set_default(subscriber);
-    // Parallel tests may have met the log's callsite with no subscriber.
-    tracing::callsite::rebuild_interest_cache();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

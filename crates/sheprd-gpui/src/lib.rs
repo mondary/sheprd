@@ -13,6 +13,7 @@ mod app;
 #[cfg(any(target_os = "macos", windows, test))]
 mod app_badge;
 mod app_icon;
+mod app_rename;
 mod automations;
 mod avatars;
 mod backdrop;
@@ -166,6 +167,7 @@ mod titlebar;
 mod toggles;
 mod truncate;
 mod update_panel;
+mod upload_chips;
 mod usage;
 mod window;
 mod window_state;

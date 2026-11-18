@@ -414,18 +414,20 @@ impl SheprdWindow {
             }
             let id = option.id.clone();
             let pane = pane_id.clone();
-            let compact = layout_for(self.config.chat.layout).compact_settings()
-                && matches!(option.kind, OptionKind::Select { .. });
             let selector = format!("chat-setting-{}", option.id);
             let button = self
                 .chat_header_button(selector.clone().into())
                 .tooltip(self.chat_setting_hint(&option.name, &option.current_name()))
                 .child(self.chat_setting_icon(&selector, category_icon(category)))
-                // The mark and tooltip still say what a squeezed button sets.
-                .when(compact, |button| button.flex_shrink_1().min_w(px(46.)))
+                // A button squeezed by a single-line footer, or alone on a
+                // wrapped line narrower than it, truncates its label; the
+                // mark and tooltip still say what it sets.
+                .flex_shrink_1()
+                .min_w(px(46.))
                 .child(
                     div()
-                        .when(compact, |label| label.min_w_0().flex_shrink_1())
+                        .min_w_0()
+                        .flex_shrink_1()
                         .max_w(px(200.))
                         .truncate()
                         .child(safe_text(&option.current_name(), 80)),

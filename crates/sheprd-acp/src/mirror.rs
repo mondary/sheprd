@@ -186,6 +186,11 @@ fn changes(previous: &Transcript, next: &Transcript) -> Option<Vec<Change>> {
             entry: entry.clone(),
         });
     }
+    if previous.status != next.status {
+        changes.push(Change::Status {
+            status: next.status.clone(),
+        });
+    }
     if previous.session != next.session {
         changes.push(Change::Session {
             session: next.session.clone(),

@@ -20,11 +20,11 @@ public struct GitHubPullRequest: Hashable, Sendable {
     /// GitHub has more than the first 100 checks.
     public var moreChecks: Bool
 
-    public enum State: String, Hashable, Sendable {
+    public enum State: String, Hashable, Sendable, Codable {
         case open = "OPEN", closed = "CLOSED", merged = "MERGED", unknown
     }
 
-    public enum ReviewDecision: String, Hashable, Sendable {
+    public enum ReviewDecision: String, Hashable, Sendable, Codable {
         case approved = "APPROVED"
         case changesRequested = "CHANGES_REQUESTED"
         case reviewRequired = "REVIEW_REQUIRED"

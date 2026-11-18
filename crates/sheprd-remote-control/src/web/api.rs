@@ -65,6 +65,15 @@ pub(super) struct ClaimRequest {
     /// origin must carry.
     #[serde(default)]
     passkey: Option<passkey::Registration>,
+    /// Another computer's Sheprd asking to open terminals here over SSH
+    /// through the relays (`crate::ssh_access`): its `ssh-ed25519` key.
+    #[serde(default)]
+    ssh: Option<SshRequest>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct SshRequest {
+    public_key: String,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +106,12 @@ pub(super) async fn claim(
         .filter(|origin| !state.serves(origin))
         .map(|origin| app_origin(origin).ok_or(ApiError::Invalid("the app's origin is not valid")))
         .transpose()?;
+    // A desktop claims through the relays' tunnel, never at a web name
+    // open to the internet, where a stolen token must not buy SSH access.
+    if request.ssh.is_some() {
+        network_only(&scope)?;
+    }
+    let ssh = desktop_key(&state, request.ssh.as_ref(), request.relay.as_ref()).await?;
     let claim = with_auth(&state, move |auth| {
         let passkey = match scope.web_host() {
             Some(host) => Some(claim_passkey(
@@ -107,6 +122,9 @@ pub(super) async fn claim(
             )?),
             None => None,
         };
+        if ssh.is_some() {
+            auth.ssh_access()?;
+        }
         let claim = auth.claim(
             peer.ip(),
             request.token.expose_secret(),
@@ -119,6 +137,9 @@ pub(super) async fn claim(
         }
         if let Some(passkey) = passkey {
             auth.claimed_passkey(&claim.id, passkey);
+        }
+        if let Some(key) = ssh {
+            auth.claimed_ssh(&claim.id, key);
         }
         if let Some(relay) = request.relay {
             let keys = crate::auth::devices::RelayKeys {
@@ -167,6 +188,39 @@ fn claim_passkey(
     Ok(passkey::register(host, &challenge, registration).map_err(crate::auth::Error::from)?)
 }
 
+/// The SSH key a desktop claims with, checked before its token is spent:
+/// a desktop reaches this computer only through the relays, so it must send
+/// relay keys too, and an SSH server must be listening to splice it to.
+async fn desktop_key(
+    state: &Shared,
+    ssh: Option<&SshRequest>,
+    relay: Option<&RelayKeysRequest>,
+) -> Result<Option<crate::ssh_access::SshKey>, ApiError> {
+    let Some(ssh) = ssh else {
+        return Ok(None);
+    };
+    let key =
+        crate::ssh_access::SshKey::parse(&ssh.public_key).map_err(crate::auth::Error::from)?;
+    let reachable = relay.is_some_and(|relay| {
+        let keys = crate::auth::devices::RelayKeys {
+            dial: relay.dial.clone(),
+            tunnel: relay.tunnel.clone(),
+        };
+        keys.dial_key().is_some() && keys.tunnel_key().is_some()
+    });
+    if !reachable {
+        return Err(ApiError::Invalid("a desktop must send relay keys"));
+    }
+    let access = with_auth(state, |auth| Ok(auth.ssh_access()?.clone())).await?;
+    let listening = tokio::task::spawn_blocking(move || access.server_listening())
+        .await
+        .unwrap_or(false);
+    if !listening {
+        return Err(crate::auth::Error::from(crate::ssh_access::Error::ServerOff).into());
+    }
+    Ok(Some(key))
+}
+
 /// `origin` when it is an `https://` origin as a browser sends it: a host
 /// and an optional port, nothing more, at most 255 bytes.
 pub(super) fn app_origin(origin: &str) -> Option<String> {
@@ -184,18 +238,31 @@ pub(super) async fn claim_status(
     scope: Scope,
     Path(claim): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let pairing = with_auth(&state, move |auth| {
-        Ok(auth.claim_status(&ClaimId(claim), now_ms())?)
+    let (pairing, login) = with_auth(&state, move |auth| {
+        let pairing = auth.claim_status(&ClaimId(claim), now_ms())?;
+        // A desktop learns who to log in as, and which host keys to pin,
+        // only once allowed.
+        let login = match &pairing {
+            PairingState::Approved { device } => auth.desktop_login(device)?,
+            _ => None,
+        };
+        Ok((pairing, login))
     })
     .await?;
     Ok(Json(match pairing {
-        PairingState::Approved { device } => json!({
-            "state": "approved",
-            "device": device.0,
-            "origins": state.origins_for(&scope),
-            "fingerprint": state.fingerprint,
-            "computer": state.computer,
-        }),
+        PairingState::Approved { device } => {
+            let mut approved = json!({
+                "state": "approved",
+                "device": device.0,
+                "origins": state.origins_for(&scope),
+                "fingerprint": state.fingerprint,
+                "computer": state.computer,
+            });
+            if let Some(login) = login {
+                approved["ssh"] = json!(login);
+            }
+            approved
+        }
         PairingState::Claimed { .. } | PairingState::Waiting { .. } => json!({"state": "claimed"}),
         PairingState::Denied => json!({"state": "denied"}),
         PairingState::Expired => json!({"state": "expired"}),

@@ -660,27 +660,10 @@ impl SheprdWindow {
         let scope = crate::browser::scope(&self.endpoints[index]);
         let target = self.endpoints[index].connection.target.clone();
         let expected = target.clone();
-        let identity = self.sessions(index).core.as_ref().and_then(|session| {
-            let workspace = session.workspace(&workspace)?;
-            let tree = workspace.worktree.as_ref().filter(|tree| tree.linked)?;
-            Some((tree.key.clone(), workspace.branch.clone()))
-        });
+        let identity = self.kept_checkout_identity(index, &workspace);
         let removed = cx.background_executor().spawn(async move {
-            let host = work::host_for_kept(&target)?;
             let cancelled = AtomicBool::new(false);
-            // A directory can be replaced while a dialog or archive is
-            // open. Its old workspace never authorizes the replacement.
-            let (key, branch) = identity.ok_or(crate::Error::StaleWorkspace)?;
-            let current = work::identity(&host, &path, &cancelled)?;
-            if !current.linked || current.key != key || current.branch != branch {
-                return Err(crate::Error::StaleWorkspace);
-            }
-            if let Some(candidate) = merged {
-                crate::merged_cleanup::verify_kept_removal_on(
-                    &target, &candidate, &path, &cancelled,
-                )?;
-            }
-            work::remove(&host, &path, force, &cancelled).map_err(crate::Error::from)
+            remove_kept_checkout_on(&target, identity, &path, force, merged.as_ref(), &cancelled)
         });
         cx.spawn(async move |this, cx| {
             let result = removed.await;
@@ -697,6 +680,21 @@ impl SheprdWindow {
         })
         .detach();
         cx.notify();
+    }
+
+    /// The repository and branch of the linked checkout of the kept
+    /// `workspace` on endpoint `index`, which a removal checks the folder
+    /// still is; `None` when it is not a linked checkout.
+    pub(crate) fn kept_checkout_identity(
+        &self,
+        index: usize,
+        workspace: &str,
+    ) -> Option<(String, Option<String>)> {
+        self.sessions(index).core.as_ref().and_then(|session| {
+            let workspace = session.workspace(workspace)?;
+            let tree = workspace.worktree.as_ref().filter(|tree| tree.linked)?;
+            Some((tree.key.clone(), workspace.branch.clone()))
+        })
     }
 
     /// Closes a removed checkout's workspace, or reports why it stayed in
@@ -736,6 +734,31 @@ impl SheprdWindow {
             }
         }
     }
+}
+
+/// Removes the kept linked checkout at `path` on `target` when it is still
+/// the repository and branch `identity` says. Blocking: call only on the
+/// background executor.
+pub(crate) fn remove_kept_checkout_on(
+    target: &ConnectTarget,
+    identity: Option<(String, Option<String>)>,
+    path: &str,
+    force: bool,
+    merged: Option<&crate::merged_cleanup::Candidate>,
+    cancelled: &AtomicBool,
+) -> crate::Result<()> {
+    let host = work::host_for_kept(target)?;
+    // A directory can be replaced while a dialog or archive is open. Its
+    // old workspace never authorizes the replacement.
+    let (key, branch) = identity.ok_or(crate::Error::StaleWorkspace)?;
+    let current = work::identity(&host, path, cancelled)?;
+    if !current.linked || current.key != key || current.branch != branch {
+        return Err(crate::Error::StaleWorkspace);
+    }
+    if let Some(candidate) = merged {
+        crate::merged_cleanup::verify_kept_removal_on(target, candidate, path, cancelled)?;
+    }
+    work::remove(&host, path, force, cancelled).map_err(crate::Error::from)
 }
 
 impl From<work::Checkout> for Entry {

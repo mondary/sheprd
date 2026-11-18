@@ -298,10 +298,14 @@ enum PullRequestDetailAnswer {
     /// Remote text as the screens show it.
     enum RemoteText {
         /// Markdown kept as written, its lines intact, without other
-        /// control or direction characters, and cut at `limit`
-        /// characters with a note.
+        /// control or direction characters, its HTML as Markdown
+        /// (`CommentHTML`), and cut at `limit` characters with a note.
         static func body(_ text: String, limit: Int) -> String {
-            let kept = String(String.UnicodeScalarView(text.unicodeScalars.filter { scalar in
+            // Converted first, bounded so the work stays small however long
+            // the body, then filtered, so no entity can decode into a
+            // control or direction character after the filter ran.
+            let converted = CommentHTML.markdown(String(text.prefix(limit * 2 + 1024)))
+            let kept = String(String.UnicodeScalarView(converted.unicodeScalars.filter { scalar in
                 if scalar == "\n" || scalar == "\t" { return true }
                 return scalar.properties.generalCategory != .control
                     && !(0x202A...0x202E).contains(scalar.value) && !(0x2066...0x2069).contains(scalar.value)

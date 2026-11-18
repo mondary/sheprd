@@ -126,7 +126,7 @@ impl Keeper {
         }
     }
 
-    /// The chat switched to `agent` before its first prompt; the session
+    /// The chat switched to `agent`; the session
     /// that opens next is that agent's. The record of the agent before goes
     /// at once: should the new one fail to start, a restore must not bring
     /// back the agent the user switched away from.

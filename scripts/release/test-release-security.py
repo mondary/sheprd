@@ -47,14 +47,19 @@ class ReleaseTargets(unittest.TestCase):
             self.assertIn("github.repository == 'sheprd-labs/sheprd'", job)
         # Keeps every main cache inside the repository's 10 GB cache budget.
         self.assertIn("\nenv:\n  CARGO_PROFILE_DEV_DEBUG: '0'\n\njobs:\n", workflow)
-        self.assertIn("    needs: [checks, windows, windows-native, windows-package, build-macos, commits, website]\n",
+        self.assertIn("    needs: [checks, windows, windows-native, windows-package, build-macos, commits, website, zizmor]\n",
                       jobs["checks-passed"])
-        self.assertIn('test "$COMMITS" = success || exit 1', jobs["checks-passed"])
+        # The workflow audit runs beside the other jobs, so the gate requires it.
+        self.assertIn('test "$COMMITS" = success && test "$ZIZMOR" = success || exit 1',
+                      jobs["checks-passed"])
         self.assertIn('test "$RESULT" = success && test "$WINDOWS" = success', jobs["checks-passed"])
         self.assertIn('test "$CODE" = false && test "$RESULT" = skipped && test "$WINDOWS" = skipped', jobs["checks-passed"])
-        for name in ("checks", "windows", "build", "build-macos"):
+        for name in ("checks", "windows", "build"):
             self.assertIn("needs.commits.outputs.code == 'true'", jobs[name])
-            self.assertIn("needs: [zizmor, commits]", jobs[name])
+        self.assertIn("needs.commits.outputs.macos_release == 'true'", jobs["build-macos"])
+        self.assertIn("needs.commits.outputs.windows_native == 'true'", jobs["windows-native"])
+        for name in ("checks", "windows", "windows-native", "build", "build-macos"):
+            self.assertIn("    needs: commits\n", jobs[name])
         self.assertIn("WINDOWS: ${{ needs.windows.result }}", jobs["checks-passed"])
         self.assertIn("          fetch-depth: 0\n", jobs["commits"])
         self.assertIn("python3 scripts/release/check-commit-messages.py range", jobs["commits"])
@@ -110,7 +115,7 @@ class ReleaseTargets(unittest.TestCase):
         # it then, and its absence otherwise.
         package = jobs["windows-package"]
         self.assertIn("needs.commits.outputs.windows_package == 'true'", package)
-        self.assertIn("needs: [zizmor, commits]", package)
+        self.assertIn("    needs: commits\n", package)
         self.assertNotIn("secrets.", package)
         # Bash, so "$TARGET" and friends expand on the Windows runner.
         self.assertIn("    defaults:\n      run:\n        shell: bash\n", package)
@@ -121,11 +126,11 @@ class ReleaseTargets(unittest.TestCase):
                         'python scripts/release/windows-installer.py smoke'):
             self.assertIn(command, package)
         self.assertIn("windows_package: ${{ steps.changes.outputs.windows_package }}", jobs["commits"])
-        # Native Windows GUI tests run whenever code changes, against the
-        # pinned daemon only, and the gate requires them as it does windows.
+        # Native Windows GUI tests run for what the app is built from (on main,
+        # for any code change), against the pinned daemon only, and the gate
+        # requires them then, and their absence otherwise.
         native = jobs["windows-native"]
-        self.assertIn("needs.commits.outputs.code == 'true'", native)
-        self.assertIn("needs: [zizmor, commits]", native)
+        self.assertIn("needs.commits.outputs.windows_native == 'true'", native)
         self.assertIn("        runner: [windows-2025, windows-11-arm]\n", native)
         self.assertNotIn("secrets.", native)
         for command in ('python scripts/install-herdr-windows.py "$RUNNER_TEMP/herdr"',
@@ -133,8 +138,8 @@ class ReleaseTargets(unittest.TestCase):
                         "--performance-test"):
             self.assertIn(command, native)
         self.assertIn("NATIVE: ${{ needs.windows-native.result }}", jobs["checks-passed"])
-        self.assertIn('test "$WINDOWS" = success && test "$NATIVE" = success', jobs["checks-passed"])
-        self.assertIn('test "$WINDOWS" = skipped && test "$NATIVE" = skipped', jobs["checks-passed"])
+        self.assertIn('test "$NATIVE" = success', jobs["checks-passed"])
+        self.assertIn('test "$NATIVE_INPUTS" = false && test "$NATIVE" = skipped', jobs["checks-passed"])
         self.assertIn("PACKAGE: ${{ needs.windows-package.result }}", jobs["checks-passed"])
         self.assertIn('test "$PACKAGE" = success', jobs["checks-passed"])
         self.assertIn('test "$PACKAGE_INPUTS" = false && test "$PACKAGE" = skipped', jobs["checks-passed"])

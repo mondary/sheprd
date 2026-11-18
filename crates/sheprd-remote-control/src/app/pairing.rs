@@ -40,12 +40,17 @@ pub enum Phase {
         /// `PairingState::Claimed::passkey`: it claimed at a web name with
         /// a passkey.
         passkey: bool,
+        /// `PairingState::Claimed::ssh`: another computer's Sheprd asks to
+        /// open terminals here over SSH.
+        ssh: bool,
         /// The answer given, once sent: `Some(true)` waits for the daemon
         /// to report the device approved.
         answer: Option<Answer>,
     },
     Approved {
         device_name: String,
+        /// Another computer, let in over SSH rather than to the chats.
+        ssh: bool,
     },
     Denied,
     /// The claimed pairing ran out before an answer, or was voided.
@@ -309,6 +314,7 @@ impl Pairing {
                     code,
                     app,
                     passkey,
+                    ssh,
                 },
             ) => Phase::Claimed {
                 offer,
@@ -316,13 +322,18 @@ impl Pairing {
                 code,
                 app,
                 passkey,
+                ssh,
                 answer: None,
             },
-            (Phase::Claimed { device_name, .. }, PairingState::Approved { .. }) => {
-                Phase::Approved { device_name }
-            }
+            (
+                Phase::Claimed {
+                    device_name, ssh, ..
+                },
+                PairingState::Approved { .. },
+            ) => Phase::Approved { device_name, ssh },
             (Phase::Showing { .. }, PairingState::Approved { .. }) => Phase::Approved {
                 device_name: "The device".into(),
+                ssh: false,
             },
             (_, PairingState::Denied) => Phase::Denied,
             (phase, PairingState::Expired) => {

@@ -1,11 +1,11 @@
-//! Switching a chat to another built-in agent before its first prompt.
+//! Switching a chat to another built-in agent while its agent is idle.
 //!
-//! Until a prompt reaches the agent, nothing of the conversation lives in
-//! it, so another agent can take its place without losing anything the user
-//! said. The session drops what the old agent told it, starts a new epoch
-//! with a fresh transcript every client replaces its own with, and asks the
-//! program to start the new agent ([`super::Flow::Launch`]). Once a prompt is
-//! sent, the choice closes for good.
+//! The session drops what the old agent told it (its session, modes,
+//! settings, and sub-agents) but keeps the conversation, starts a new epoch
+//! every client replaces its transcript with, and asks the program to start
+//! the new agent ([`super::Flow::Launch`]). Once a prompt has reached an
+//! agent, the one taking over gets the conversation with the user's next
+//! prompt ([`super::thread`]). A switch waits for a running turn to end.
 
 use sheprd_chat_protocol::{
     Agent, Change, Cursor, Harnesses, Rejection, ServerMessage, Transcript,
@@ -21,6 +21,10 @@ impl<R: FnMut(Update)> Session<R> {
             .harnesses
             .as_ref()
             .ok_or(Rejection::AgentFixed)?;
+        // Mid-turn, the agent still holds work the user started.
+        if self.turn.is_some() {
+            return Err(Rejection::AgentFixed);
+        }
         if !harnesses.available.contains(&agent) {
             return Err(Rejection::AgentMissing);
         }
@@ -31,8 +35,19 @@ impl<R: FnMut(Update)> Session<R> {
     }
 
     fn switch(&mut self, agent: Agent, available: Vec<Agent>) {
-        // Nothing the old agent said, opened, or asked carries over; its
-        // answers still on their way are told apart by the new id.
+        let leaving = self
+            .config
+            .harness
+            .zip(self.acp_session.as_ref().map(|id| id.0.to_string()));
+        let resume = self
+            .thread
+            .switch(leaving, self.transcript.last_entry_id(), agent);
+        self.config.load = resume;
+        // A switch never fails for want of the earlier session: the agent
+        // then starts a new one and gets the whole conversation.
+        self.config.require_load = false;
+        // Nothing the old agent opened or asked carries over; its answers
+        // still on their way are told apart by the new id.
         self.harness = HarnessId(self.harness.0 + 1);
         self.accepts = crate::files::Accepts::default();
         self.acp_session = None;
@@ -49,6 +64,9 @@ impl<R: FnMut(Update)> Session<R> {
         let mut transcript = Transcript::new(self.config.agent.clone());
         transcript.auto_accept = self.transcript.auto_accept;
         transcript.clients = self.transcript.clients;
+        // The conversation stays; what the old agent alone held does not.
+        transcript.entries = std::mem::take(&mut self.transcript.entries);
+        transcript.truncated = self.transcript.truncated;
         // Prompts typed while the old agent started go to the new one.
         transcript.queued = std::mem::take(&mut self.transcript.queued);
         transcript.harnesses = Some(Harnesses {
@@ -77,6 +95,13 @@ impl<R: FnMut(Update)> Session<R> {
                 count: self.remote_clients(),
             });
         }
+        if self.thread.started() {
+            let notice = self.projector.notice(
+                sheprd_chat_protocol::NoticeLevel::Info,
+                format!("Switched to {}.", agent.display_name()),
+            );
+            self.emit(notice);
+        }
         (self.report)(Update::Harness(agent));
         self.report_activity();
         self.launch = Some(agent);
@@ -101,13 +126,5 @@ impl<R: FnMut(Update)> Session<R> {
             source = cause.source();
         }
         self.fail(&message);
-    }
-
-    /// Closes the choice: a prompt is on its way to the agent, which now
-    /// holds the conversation.
-    pub(super) fn fix_agent(&mut self) {
-        if self.transcript.harnesses.is_some() {
-            self.emit(Change::Harnesses { harnesses: None });
-        }
     }
 }

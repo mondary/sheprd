@@ -43,7 +43,7 @@ enum PullRequestSearchQuery {
 
 /// A pull request as a search lists it: where it is, what it is called,
 /// where it stands, and its checks counted.
-public struct GitHubSearchPull: Hashable, Sendable, Identifiable {
+public struct GitHubSearchPull: Hashable, Sendable, Identifiable, Codable {
     public var host: GitHubHost
     public var owner: String
     public var repo: String
@@ -96,7 +96,7 @@ public struct GitHubSearchPull: Hashable, Sendable, Identifiable {
     }
 
     /// Checks by where they stand; skipped and neutral ones are not counted.
-    public struct CheckCounts: Hashable, Sendable {
+    public struct CheckCounts: Hashable, Sendable, Codable {
         public var failing: Int
         public var pending: Int
         public var passed: Int
@@ -110,7 +110,8 @@ public struct GitHubSearchPull: Hashable, Sendable, Identifiable {
 }
 
 /// The two lists, and how many each search found in all.
-public struct PullRequestLists: Hashable, Sendable {
+/// Codable for the phone's cache, which shows the lists last read at once.
+public struct PullRequestLists: Hashable, Sendable, Codable {
     public var mine: [GitHubSearchPull]
     public var reviewRequested: [GitHubSearchPull]
     public var mineTotal: Int
@@ -124,6 +125,20 @@ public struct PullRequestLists: Hashable, Sendable {
     }
 
     public var isEmpty: Bool { mine.isEmpty && reviewRequested.isEmpty }
+
+    /// The pull requests whose title, repository, number, author, or branch
+    /// holds every word of `query`, whatever their case; all of them for an
+    /// empty query. Totals become what matched, as a search finds no more.
+    public func matching(_ query: String) -> PullRequestLists {
+        let words = query.split(whereSeparator: \.isWhitespace).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#")) }
+            .filter { !$0.isEmpty }
+        guard !words.isEmpty else { return self }
+        let matches = { (pull: GitHubSearchPull) in
+            let fields = [pull.title, pull.repository, "\(pull.number)", pull.author ?? "", pull.headRefName]
+            return words.allSatisfy { word in fields.contains { $0.localizedCaseInsensitiveContains(word) } }
+        }
+        return PullRequestLists(mine: mine.filter(matches), reviewRequested: reviewRequested.filter(matches))
+    }
 }
 
 /// Reading a `PullRequestSearchQuery`'s answer. Everything in it is remote

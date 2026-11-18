@@ -162,6 +162,7 @@ impl SheprdWindow {
             browser,
             catalog,
             cell_width: 9.,
+            chat_rail_width: crate::panel_resize::CHAT_RAIL,
             chats: Default::default(),
             checkpoints: Default::default(),
             chrome_region: None,

@@ -34,7 +34,6 @@ struct WorkspacesTab: View {
     /// The computer whose page is open from its header menu.
     @State private var details: String?
     @State private var forgetting: Computer?
-    @AppStorage(WorkspacesShows.key) private var shows = WorkspacesShows.workspaces
 
     /// Workspaces open at once before the list needs its index: about a
     /// screenful on a phone.
@@ -42,15 +41,10 @@ struct WorkspacesTab: View {
 
     var body: some View {
         Group {
-            if !query.isEmpty {
-                SearchResults(query: query)
-            } else if shows == .pullRequests {
-                PullRequestsList(shows: $shows)
-            } else {
-                list
-            }
+            if query.isEmpty { list } else { SearchResults(query: query) }
         }
-        .gitHubRefresh(showsLists: query.isEmpty && shows == .pullRequests)
+        // The rows' pull request badges; the lists have a tab of their own.
+        .gitHubRefresh(showsLists: false)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Workspaces, chats, terminals")
         // No title, as Home and Settings have none; the search names it.
         .navigationBarTitleDisplayMode(.inline)
@@ -61,7 +55,10 @@ struct WorkspacesTab: View {
         .task { if UserDefaults.standard.bool(forKey: "openComputer") { details = model.computers.first?.device } }
         #endif
         .toolbar {
-            if query.isEmpty, shows == .workspaces, machines.count > 1 {
+            if query.isEmpty, !ComputerTags.all(in: model.computers).isEmpty || model.computers.count > 1 {
+                ToolbarItem(placement: .topBarLeading) { TagFilterMenu() }
+            }
+            if query.isEmpty, machines.count > 1 {
                 ToolbarItem(placement: .topBarTrailing) {
                     let shown = machines.map(\.id)
                     let folded = model.collapsed.computers.allCollapsed(shown)
@@ -82,8 +79,6 @@ struct WorkspacesTab: View {
 
     private var list: some View {
         List {
-            WorkspacesShowsPicker(shows: $shows)
-            TagFilterBar()
             ForEach(machines) { machine in
                 let collapsed = model.collapsed.computers.contains(machine.id)
                 Section {
@@ -134,10 +129,10 @@ struct WorkspacesTab: View {
         }
     }
 
-    /// The computers the tag filter leaves.
+    /// The computers the filter leaves.
     private var machines: [Fleet.Machine] {
-        let tag = ComputerTags.active(model.tagFilter.tag, among: model.computers)
-        return model.fleet.machines.filter { $0.computer.matches(tag: tag) }
+        let shown = model.tagFilter.shown(among: model.computers)
+        return model.fleet.machines.filter { shown.contains($0.computer.device) }
     }
 
     private var openWorkspaces: Int {

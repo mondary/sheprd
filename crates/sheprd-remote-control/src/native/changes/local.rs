@@ -86,7 +86,7 @@ fn compared(cwd: &Path, scope: Scope) -> Result<Compared, Failure> {
 /// The checkout `cwd` is in, by its top folder: every path below is
 /// relative to it, as `git diff` gives them, whatever folder in it the
 /// workspace names.
-fn root(cwd: &Path) -> Result<PathBuf, Failure> {
+pub(crate) fn root(cwd: &Path) -> Result<PathBuf, Failure> {
     let top = git(cwd, &["rev-parse", "--show-toplevel"]).map_err(|_| Failure::NoRepository)?;
     let top = top.trim_end_matches(['\n', '\r']);
     if top.is_empty() {

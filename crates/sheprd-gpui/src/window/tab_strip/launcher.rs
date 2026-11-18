@@ -3,7 +3,7 @@
 //! "+" opens a terminal tab in every placement. Only agents installed on
 //! the selected host show, and none while no chat can start there. The
 //! default is one Agent button, whose chat offers the other agents in its
-//! composer until its first prompt.
+//! composer.
 
 use super::SheprdWindow;
 use crate::i18n::fl;

@@ -197,7 +197,7 @@ share at least two of its keywords and were not shown yet in that chat.
 | `chat convert [--pane ID]` | Move the terminal agent in your pane (or ID, else the focused one) into a `sheprd-acp` chat in the same pane, keeping its conversation. From a Herdr 2 pane, your pane is your terminal (`HC_TERMINAL_ID`), whose id in `chat` is `core:` and the terminal's (see [Moving a terminal agent into a chat](rich-chat.md#moving-a-terminal-agent-into-a-chat)). Returns once the move has started; `chat` shows the chat when it attaches. Exits 6 while the agent works, 5 when the pane has no terminal agent, and 8 for an agent or pane that cannot move |
 | `chat shortcuts` | Your text shortcuts, the prompts every chat's composer offers (type `/`, or use the shortcuts button beside +), in order: each label and its text. `--json` adds each one's `id` and `title`, the list's `updated_ms`, and `complete`, false when the list holds more text than one answer carries. The list is the same on this computer, every connected SSH host with `sheprd-remote-control`, and the phones paired with them; Settings > Text Shortcuts edits it. Exits 4 when there are none |
 | `chat show\|hide\|toggle [--pane ID]` | Show the native chat view over your pane (or ID, else the focused one), or its terminal |
-| `chat new AGENT [--pane ID]` | Open a tab running a `sheprd-acp` chat with a built-in agent (`claude`, `codex`, `copilot`, `gemini`, `opencode`, `pi`) in the workspace and folder of your pane (or ID). Until its first prompt, a chat on this machine can still switch to another installed agent from its composer. On an SSH host the tab runs that host's `sheprd-acp` (see [Chats on SSH hosts](#chats-on-ssh-hosts)). With no Herdr pane to go by, as when called from a Herdr 2 pane, a Herdr 2 tab in the active group splits its pane in use with the chat instead (see [Chats in Herdr 2 panes](rich-chat.md#chats-in-herdr-2-panes)); its pane id in `chat` is `core:` and the terminal's. Exits 8 when `sheprd-acp` is missing here, the host cannot be reached, or the agent is not installed on it (`sheprd-acp agents` lists those that are) |
+| `chat new AGENT [--pane ID]` | Open a tab running a `sheprd-acp` chat with a built-in agent (`claude`, `codex`, `copilot`, `gemini`, `opencode`, `pi`) in the workspace and folder of your pane (or ID). While its agent is idle, a chat on this machine can switch to another installed agent from its composer, which hands the new agent the conversation. On an SSH host the tab runs that host's `sheprd-acp` (see [Chats on SSH hosts](#chats-on-ssh-hosts)). With no Herdr pane to go by, as when called from a Herdr 2 pane, a Herdr 2 tab in the active group splits its pane in use with the chat instead (see [Chats in Herdr 2 panes](rich-chat.md#chats-in-herdr-2-panes)); its pane id in `chat` is `core:` and the terminal's. Exits 8 when `sheprd-acp` is missing here, the host cannot be reached, or the agent is not installed on it (`sheprd-acp agents` lists those that are) |
 
 ### Hosts
 
@@ -497,8 +497,9 @@ only from another Sheprd whose user approved it in that app's dialog;
 `cloud create` installs Herdr only on the machines the user confirmed, as
 creating them in Settings does.
 
-Adding an SSH or local network device has no command: the Add Device dialog
-runs it. Its setup workspace runs `sheprd __device-setup-attach SOCKET`,
+Adding an SSH or local network device, or a nearby Sheprd over Bluetooth,
+has no command: the Add Device dialog runs it, and the other computer opens
+`remote pair`. Its setup workspace runs `sheprd __device-setup-attach SOCKET`,
 an internal helper that shows the setup the app runs (see the Native Shell
 README's "Local Network access"); it is not a command to call yourself, and
 the socket it names is single use.
@@ -603,6 +604,11 @@ download first is left out.
 
 Files dropped on a remote chat are copied to the host first, into private
 temporary files under its `${TMPDIR:-/tmp}`, and the copies are attached.
+While they copy, each file's chip in the composer fills as its bytes go
+out, the footer shows the bytes sent of the total, and a chip's × cancels
+the whole drop, removing what already reached the host. Files dropped on a
+Herdr 2 terminal on another host show the same chips along the pane's foot
+until their paths are pasted; × or Escape cancels the copy there.
 
 Herdr 2 chats also use saved cloud connectors and, on Windows, the selected
 WSL distribution. ACP installed for phone pairing by this release is reused

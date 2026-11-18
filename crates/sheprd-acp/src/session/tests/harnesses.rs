@@ -2,7 +2,7 @@ use super::*;
 
 /// A `--choose` chat offering Claude and Codex, whose Claude answered the
 /// handshake and opened session `s1` with two modes.
-fn choosing() -> Harness {
+pub(super) fn choosing() -> Harness {
     let mut harness = harness_with(Config {
         choices: Some(vec![Agent::Claude, Agent::Codex]),
         ..config()
@@ -22,7 +22,7 @@ fn choosing() -> Harness {
     harness
 }
 
-fn set_agent(harness: &mut Harness, agent: Agent) -> (Flow, CommandId) {
+pub(super) fn set_agent(harness: &mut Harness, agent: Agent) -> (Flow, CommandId) {
     let id = CommandId::random();
     let flow = harness.input(Input::Command {
         command: Command::SetAgent { agent },
@@ -32,7 +32,7 @@ fn set_agent(harness: &mut Harness, agent: Agent) -> (Flow, CommandId) {
     (flow, id)
 }
 
-fn rejection(messages: &[ServerMessage], id: CommandId) -> Option<Rejection> {
+pub(super) fn rejection(messages: &[ServerMessage], id: CommandId) -> Option<Rejection> {
     messages
         .iter()
         .find_map(|message| match message {
@@ -50,7 +50,7 @@ const SECOND_PID: u32 = 4242;
 
 /// Hands the session a new agent's outbox, as the program does after
 /// [`Flow::Launch`], and returns what the session writes to it.
-fn launch(harness: &mut Harness) -> Receiver<Vec<u8>> {
+pub(super) fn launch(harness: &mut Harness) -> Receiver<Vec<u8>> {
     let (sender, agent) = bounded(64);
     harness.session.launched(Outbox(sender), SECOND_PID);
     agent
@@ -67,7 +67,7 @@ fn respond_second(harness: &mut Harness, id: i64, result: Value) {
     ));
 }
 
-fn requests(agent: &Receiver<Vec<u8>>) -> Vec<Value> {
+pub(super) fn requests(agent: &Receiver<Vec<u8>>) -> Vec<Value> {
     agent
         .try_iter()
         .map(|line| serde_json::from_slice(&line).unwrap())
@@ -105,6 +105,7 @@ fn switching_starts_the_new_agent_from_a_fresh_transcript() {
         Flow::Launch {
             agent: Agent::Codex,
             harness: HarnessId(1),
+            load: None,
         }
     );
     assert_eq!(*harness.switched.borrow(), [Agent::Codex]);
@@ -151,21 +152,25 @@ fn the_old_agent_is_no_longer_heard() {
 }
 
 #[test]
-fn the_first_prompt_closes_the_choice() {
+fn a_running_turn_refuses_a_switch_and_an_idle_agent_takes_one() {
     let mut harness = choosing();
     let client = harness.subscribe(1, false, None);
-    prompt(&mut harness, 1, "hello");
-    assert_eq!(harness.transcript().harnesses, None);
-    assert!(drain(&client).iter().any(|message| matches!(
-        message,
-        ServerMessage::Change {
-            change: Change::Harnesses { harnesses: None },
-            ..
-        }
-    )));
+    let turn = prompt(&mut harness, 1, "hello");
+    // The choice stays open after the first prompt.
+    assert!(harness.transcript().harnesses.is_some());
     let (flow, id) = set_agent(&mut harness, Agent::Codex);
     assert_eq!(flow, Flow::Continue);
     assert_eq!(rejection(&drain(&client), id), Some(Rejection::AgentFixed));
+    harness.respond(turn, json!({"stopReason": "end_turn"}));
+    let (flow, _) = set_agent(&mut harness, Agent::Codex);
+    assert_eq!(
+        flow,
+        Flow::Launch {
+            agent: Agent::Codex,
+            harness: HarnessId(1),
+            load: None,
+        }
+    );
 }
 
 #[test]
@@ -222,7 +227,9 @@ fn prompts_waiting_for_the_old_agent_go_to_the_new_one() {
     let sent = requests(&agent);
     assert_eq!(sent[0]["method"], "session/prompt");
     assert_eq!(sent[0]["params"]["prompt"][0]["text"], "fix the build");
-    assert_eq!(harness.transcript().harnesses, None);
+    // No prompt had reached an agent, so there is nothing to hand over.
+    assert_eq!(sent[0]["params"]["prompt"].as_array().unwrap().len(), 1);
+    assert!(harness.transcript().harnesses.is_some());
 }
 
 #[test]
@@ -245,6 +252,7 @@ fn an_agent_that_cannot_start_leaves_the_choice_open() {
         Flow::Launch {
             agent: Agent::Claude,
             harness: HarnessId(2),
+            load: None,
         }
     );
     assert_eq!(harness.transcript().status, Status::Starting);

@@ -51,16 +51,6 @@ struct HostRelayTests {
         #expect(throws: DecodingError.self) { try state(#"{"state":"done","outcome":"later"}"#) }
     }
 
-    @Test func aRecordKeepsTheKeysThePhoneSent() throws {
-        let keys = RelayKeyPair()
-        let record = try #require(RelayRecord.make(from: RelayRecordTests.info(), keys: keys))
-        #expect(record.dialKey == keys.dialKey)
-        #expect(record.tunnelKey == keys.tunnelKey)
-        #expect(record.enrollment == keys.enrollment)
-        #expect(keys.enrollment != nil)
-        #expect(RelayKeyPair().enrollment != keys.enrollment)
-    }
-
     static func computer(_ device: String, fingerprint: String, via: String? = nil) -> Computer {
         Computer(
             device: device, name: device, origins: [], fingerprint: Fingerprint(String(repeating: fingerprint, count: 32))!,

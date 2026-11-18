@@ -59,6 +59,7 @@ fn asking() -> Transcript {
                     name: id.to_owned(),
                 })
                 .collect(),
+            question: None,
             title: "Run?".to_owned(),
         }],
         status: Status::Working,

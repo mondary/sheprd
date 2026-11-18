@@ -144,6 +144,8 @@ pub(crate) struct ChatPane {
     /// Which slash-command completion is selected.
     pub(crate) completion: usize,
     pub(crate) composer: Option<Entity<MultilineInput>>,
+    /// The message effects met and playing.
+    pub(crate) effects: super::effects::Effects,
     /// The last command this window could not send.
     pub(crate) error: Option<String>,
     /// Thoughts shown in full.
@@ -163,6 +165,8 @@ pub(crate) struct ChatPane {
     /// The search field over a long menu while one is open, with the
     /// subscription that redraws the menu as it changes.
     pub(crate) menu_search: Option<(Entity<SearchInput>, gpui::Subscription)>,
+    /// The agent whose remembered mode this chat was last settled for.
+    pub(crate) mode_settled: Option<String>,
     /// The web pages live in the chat's messages, oldest first.
     pub(crate) pages: Vec<super::page::ChatPage>,
     /// Trying again cannot help: the program speaks another version.
@@ -197,6 +201,8 @@ pub(crate) struct ChatPane {
     pub(crate) text_geometry: super::view::selection::Geometry,
     /// Files being copied to the chat's SSH host to attach there.
     pub(crate) uploading: usize,
+    /// The dropped files among them, with how far each has come.
+    pub(crate) uploads: Vec<crate::upload_chips::Upload>,
     /// The picture shown large over the chat, while one is.
     pub(crate) viewer: Option<super::view::viewer::Viewer>,
     /// Interactive message state, scoped to this pane and transcript revision.
@@ -270,6 +276,7 @@ impl ChatPane {
             code: Default::default(),
             completion: 0,
             composer: None,
+            effects: Default::default(),
             error: None,
             expanded: HashSet::new(),
             failures: 0,
@@ -282,6 +289,7 @@ impl ChatPane {
             list_snapshots: 0,
             menu: None,
             menu_search: None,
+            mode_settled: None,
             pages: Vec::new(),
             permanent: false,
             prepared,
@@ -303,6 +311,7 @@ impl ChatPane {
             text_focus: None,
             text_geometry: Default::default(),
             uploading: 0,
+            uploads: Vec::new(),
             viewer: None,
             widgets: Default::default(),
         }
@@ -437,7 +446,8 @@ impl ChatPane {
     /// Brings the list and the prepared bodies up to the transcript.
     fn sync_view(&mut self) {
         let keys = self.session.keys();
-        if self.list_snapshots != self.session.snapshots() {
+        let history = self.list_snapshots != self.session.snapshots();
+        if history {
             self.list_snapshots = self.session.snapshots();
             self.prepared.clear();
             self.selection.clear();
@@ -461,6 +471,13 @@ impl ChatPane {
         self.list_keys = keys;
         self.refresh_text();
         self.widgets.retain(&self.prepared);
+        let prepared = &self.prepared;
+        self.effects.sync(
+            |entry| prepared.body(entry),
+            &self.list_keys,
+            history,
+            crate::motion::now(),
+        );
     }
 
     /// Starts the list over for `keys`: at its end, unless the user left it

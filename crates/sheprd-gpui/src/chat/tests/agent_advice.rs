@@ -1,5 +1,6 @@
-//! While a chat may still switch agents, a line over the composer says why
-//! it runs another agent than the one last used, or offers one with room.
+//! In a chat that may switch agents, a line over the composer says why it
+//! started with another agent than the one last used (until its first
+//! prompt), or offers one with room (at any time).
 
 use super::{
     overlay::{attach_with, open, poll},
@@ -81,6 +82,62 @@ fn a_chat_started_instead_says_why(cx: &mut TestAppContext) {
     claude_short(&view, cx);
     let program = Program::new();
     let _stream = attach_with(&view, &program, running(Agent::Codex), cx);
+    assert!(cx.debug_bounds("chat-agent-advice").is_some());
+}
+
+/// [`running`], once the user has said something.
+fn talking(agent: Agent) -> ServerMessage {
+    let ServerMessage::Snapshot {
+        cursor,
+        mut transcript,
+    } = running(agent)
+    else {
+        unreachable!("running gives a snapshot");
+    };
+    transcript.entries.push(Entry {
+        id: EntryId(1),
+        kind: EntryKind::User {
+            text: "hello".to_owned(),
+            files: 0,
+        },
+    });
+    ServerMessage::Snapshot { cursor, transcript }
+}
+
+#[gpui::test]
+fn why_a_chat_started_instead_goes_once_the_conversation_starts(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    claude_short(&view, cx);
+    let program = Program::new();
+    let _stream = attach_with(&view, &program, talking(Agent::Codex), cx);
+    assert!(cx.debug_bounds("chat-agent-advice").is_none());
+}
+
+#[gpui::test]
+fn why_a_chat_started_instead_stays_gone_once_its_prompts_are_trimmed(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    claude_short(&view, cx);
+    let program = Program::new();
+    let ServerMessage::Snapshot {
+        cursor,
+        mut transcript,
+    } = running(Agent::Codex)
+    else {
+        unreachable!("running gives a snapshot");
+    };
+    // A long conversation whose prompts the transcript no longer holds.
+    transcript.truncated = true;
+    let trimmed = ServerMessage::Snapshot { cursor, transcript };
+    let _stream = attach_with(&view, &program, trimmed, cx);
+    assert!(cx.debug_bounds("chat-agent-advice").is_none());
+}
+
+#[gpui::test]
+fn a_short_agent_offers_one_with_room_mid_conversation(cx: &mut TestAppContext) {
+    let (view, _peer, cx) = open(cx, ConnectTarget::Local);
+    claude_short(&view, cx);
+    let program = Program::new();
+    let _stream = attach_with(&view, &program, talking(Agent::Claude), cx);
     assert!(cx.debug_bounds("chat-agent-advice").is_some());
 }
 

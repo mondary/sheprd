@@ -94,6 +94,27 @@ pub(crate) fn seal(
     Ok([nonce.as_slice(), &sealed].concat())
 }
 
+/// Opens what [`seal`] sealed: `nonce || AES-256-GCM(key, plaintext)`.
+/// What a desktop adding this computer runs on the phone's side.
+pub(crate) fn open(key: &[u8; 32], sealed: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+    if sealed.len() < AES_NONCE_LEN {
+        return Err(Error::NearbyCrypto);
+    }
+    let (nonce, ciphertext) = sealed.split_at(AES_NONCE_LEN);
+    let nonce: &[u8; AES_NONCE_LEN] = nonce.try_into().map_err(|_| Error::NearbyCrypto)?;
+    let plaintext = Aes256Gcm::new_from_slice(key)
+        .map_err(|_| Error::NearbyCrypto)?
+        .decrypt(
+            nonce.into(),
+            Payload {
+                msg: ciphertext,
+                aad: KEY_INFO,
+            },
+        )
+        .map_err(|_| Error::NearbyCrypto)?;
+    Ok(Zeroizing::new(plaintext))
+}
+
 /// The ECDH secret between the daemon's key and the phone's point.
 pub(crate) fn shared_secret(daemon: &SecretKey, phone: &PublicKey) -> Result<Zeroizing<[u8; 32]>> {
     let point =

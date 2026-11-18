@@ -31,6 +31,10 @@ impl<R: FnMut(Update)> Session<R> {
             } => self.prompt(id, text, attachments, origin),
             Command::Cancel => self.cancel(),
             Command::Answer { option, permission } => self.answer(permission, &option),
+            Command::AnswerQuestion {
+                answers,
+                permission,
+            } => self.answer_question(permission, answers),
             Command::SetMode { id } => self.set_mode(id),
             Command::SetOption { id, value } => self.set_option(id, &value),
             Command::Unqueue { id } => self.unqueue(id),
@@ -111,9 +115,15 @@ impl<R: FnMut(Update)> Session<R> {
         }
         let prompt = self.projector.prompt(&shown, attachments.len());
         self.emit(prompt);
-        let mut blocks = Vec::with_capacity(prepared.len() + 2);
+        let mut blocks = Vec::with_capacity(prepared.len() + 3);
         if let Some(note) = self.context.before_prompt(origin, text) {
             blocks.push(wire::ContentBlock::Text(wire::TextContent::new(note)));
+        }
+        // The agent that took over hears the conversation next, apart from
+        // what the user wrote.
+        let handoff = self.thread.take_handoff();
+        if let Some(handoff) = &handoff {
+            blocks.push(wire::ContentBlock::Text(wire::TextContent::new(handoff)));
         }
         if !text.trim().is_empty() {
             blocks.push(wire::ContentBlock::Text(wire::TextContent::new(text)));
@@ -127,10 +137,10 @@ impl<R: FnMut(Update)> Session<R> {
         }
         let request = wire::PromptRequest::new(session, blocks);
         if self.request("session/prompt", &request, Pending::Prompt) {
-            // Only a prompt the agent received names the chat, and holds
-            // it to this agent.
+            // Only a prompt the agent received names the chat and starts
+            // the conversation a later agent is handed.
+            self.thread.prompted(&shown, handoff);
             (self.report)(Update::Prompt(shown));
-            self.fix_agent();
             self.turn = Some(self.next_request);
             self.emit(Change::Turn {
                 turn: Some(Turn {
@@ -138,6 +148,8 @@ impl<R: FnMut(Update)> Session<R> {
                 }),
             });
             self.status(Status::Working);
+        } else if let Some(handoff) = handoff {
+            self.thread.restore_handoff(handoff);
         }
     }
 
@@ -203,6 +215,25 @@ impl<R: FnMut(Update)> Session<R> {
             return Err(Rejection::UnknownOption);
         }
         self.resolve(permission, Some(option));
+        Ok(())
+    }
+
+    fn answer_question(
+        &mut self,
+        permission: PermissionId,
+        answers: Vec<String>,
+    ) -> Result<(), Rejection> {
+        if !self.asked.contains_key(&permission) {
+            return Err(Rejection::UnknownPermission);
+        }
+        self.transcript
+            .permissions
+            .iter()
+            .find(|asked| asked.id == permission)
+            .and_then(|asked| asked.question.as_ref())
+            .ok_or(Rejection::UnknownOption)?
+            .check(&answers)?;
+        self.resolve_answers(permission, answers);
         Ok(())
     }
 

@@ -183,6 +183,12 @@ public struct Home: Codable, Hashable, Sendable {
         public var questions: Int
         /// The start of the agent's latest answer, on one line.
         public var lastText: String?
+        /// The start of the first prompt, for a chat its agent has not
+        /// titled; absent before one is sent, and from older computers.
+        public var firstPrompt: String? = nil
+        /// What the chat's agent said of where it stands when the person
+        /// asked; absent until then, and from older computers.
+        public var rowSummary: RowSummary? = nil
         public var turnStartedMs: UInt64?
         /// When the latest turn ended; absent from older computers.
         public var lastTurnEndedMs: UInt64?
@@ -191,6 +197,8 @@ public struct Home: Codable, Hashable, Sendable {
         enum CodingKeys: String, CodingKey {
             case connected, status, question, questions
             case lastText = "last_text"
+            case firstPrompt = "first_prompt"
+            case rowSummary = "row_summary"
             case turnStartedMs = "turn_started_ms"
             case lastTurnEndedMs = "last_turn_ended_ms"
             case usagePercent = "usage_percent"
@@ -243,7 +251,43 @@ public struct Home: Codable, Hashable, Sendable {
             public var label: String?
             public var cwd: String?
             public var focused: Bool
+            /// What runs in front of its shell; absent when the computer's
+            /// Herdr does not say, as Herdr 1 does not, and from older
+            /// computers.
+            public var job: Job? = nil
             public var id: String { pane }
+        }
+
+        /// What a terminal pane runs in front of its shell.
+        public enum Job: Codable, Hashable, Sendable {
+            /// Its shell waits at a prompt.
+            case idle
+            /// A program runs: its command line, on one bounded line.
+            case running(command: String)
+            /// A state this app does not know yet, from a newer computer.
+            case other
+
+            private enum CodingKeys: String, CodingKey { case state, command }
+
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                switch try container.decode(String.self, forKey: .state) {
+                case "idle": self = .idle
+                case "running": self = .running(command: try container.decode(String.self, forKey: .command))
+                default: self = .other
+                }
+            }
+
+            public func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                switch self {
+                case .idle: try container.encode("idle", forKey: .state)
+                case let .running(command):
+                    try container.encode("running", forKey: .state)
+                    try container.encode(command, forKey: .command)
+                case .other: try container.encode("other", forKey: .state)
+                }
+            }
         }
 
         public struct DetectedAgent: Codable, Hashable, Sendable {

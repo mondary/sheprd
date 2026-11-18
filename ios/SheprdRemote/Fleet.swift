@@ -1,5 +1,6 @@
 import Foundation
 import SheprdRemoteCore
+import SheprdRelay
 import Observation
 import os
 import WidgetKit
@@ -49,6 +50,10 @@ struct TerminalItem: Identifiable, Hashable {
     /// The agent Herdr detects in it, such as `claude` run in a shell.
     var agent: Home.TerminalRow.DetectedAgent? { terminal.agent }
     var title: String { agent?.title ?? terminal.label }
+    /// What closing its row closes: the whole tab.
+    var closeTarget: CloseTarget? {
+        terminal.firstPane.map { .tab(PaneKey(device: computer.device, pane: $0.pane), title: terminal.label) }
+    }
     var needsYou: Bool { agent?.status == .blocked }
     /// When the computer saw its agent last change state.
     var changed: Date? { agent?.changedMs.map { Date(timeIntervalSince1970: Double($0) / 1000) } }
@@ -603,6 +608,31 @@ final class Fleet {
         }
     }
 
+    /// Asks for a chat's row summary; every phone's list shows it when the
+    /// computer has it.
+    func summarize(_ key: PaneKey) async throws {
+        let pane = key.pane
+        try await call(key.device) { client, token in
+            try await client.summarize(pane: pane, bearer: token)
+        }
+    }
+
+    /// A short title for a chat from Claude, run once on its own.
+    func suggestTitle(_ key: PaneKey) async throws -> String {
+        let pane = key.pane
+        return try await call(key.device) { client, token in
+            try await client.suggestTitle(pane: pane, bearer: token)
+        }
+    }
+
+    /// Closes the terminal tab a pane is in, with every pane in it.
+    func closeTab(_ key: PaneKey) async throws {
+        let pane = key.pane
+        _ = try await call(key.device) { client, token in
+            try await client.termAction(.closeTab, pane: pane, bearer: token)
+        }
+    }
+
     /// Names a chat or the terminal tab a pane is in; the next `home` from
     /// the computer carries the name to every list.
     func rename(_ key: PaneKey, to label: String) async throws {
@@ -618,6 +648,22 @@ final class Fleet {
         let workspace = key.workspace
         try await call(key.device) { client, token in
             try await client.renameWorkspace(workspace, to: label, bearer: token)
+        }
+    }
+
+    /// Closes a workspace; the next `home` drops it from every list.
+    func closeWorkspace(_ key: WorkspaceKey) async throws {
+        let workspace = key.workspace
+        try await call(key.device) { client, token in
+            try await client.closeWorkspace(workspace, bearer: token)
+        }
+    }
+
+    /// Deletes a workspace's linked worktree and closes the workspace.
+    func removeWorktree(_ key: WorkspaceKey) async throws {
+        let workspace = key.workspace
+        try await call(key.device) { client, token in
+            try await client.removeWorktree(workspace, bearer: token)
         }
     }
 

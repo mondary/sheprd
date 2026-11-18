@@ -48,6 +48,7 @@ mod terminal;
 mod typed;
 mod update;
 mod uploads;
+mod workspace;
 
 pub(crate) const ORIGIN: &str = "https://192.168.1.20:7443";
 

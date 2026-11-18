@@ -33,6 +33,7 @@ use crate::control::{
     self, DeviceId, NearbyRevealed, NearbyStarted, Offer, PairingId, PairingState,
     hosts::{Enroll, HostId, HostLink, HostOutcome, HostPairing, HostRevoke, HostState},
 };
+use crate::ssh_access::{Login, SshAccess, SshKey};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
@@ -90,6 +91,8 @@ pub enum Error {
     Random(#[source] getrandom::Error),
     #[error("too many requests; try again shortly")]
     RateLimited,
+    #[error(transparent)]
+    SshAccess(#[from] crate::ssh_access::Error),
     #[error("could not {operation} {}", path.display())]
     Store {
         operation: StoreOperation,
@@ -334,6 +337,9 @@ pub(crate) struct Auth {
     /// Bumped whenever sessions end early, so open streams check again.
     revoked: watch::Sender<u64>,
     sessions: Sessions,
+    /// Where desktops paired with an SSH key are let in; `None` refuses
+    /// them (`set_ssh_access`).
+    ssh_access: Option<SshAccess>,
 }
 
 impl Auth {
@@ -363,7 +369,64 @@ impl Auth {
             relay_pairing: None,
             revoked: watch::Sender::new(0),
             sessions: Sessions::default(),
+            ssh_access: None,
         })
+    }
+
+    /// Lets desktops paired with an SSH key in through `access`.
+    /// Lines left for devices that are gone, whose removal failed when
+    /// they were revoked, are removed here, when the daemon starts.
+    /// Blocking.
+    pub(crate) fn set_ssh_access(&mut self, access: SshAccess) {
+        let devices = &self.devices;
+        let kept = |id: &str| {
+            devices
+                .records()
+                .iter()
+                .any(|record| record.id.0 == id && record.ssh.is_some())
+        };
+        match access.keys.sweep(kept) {
+            Ok(0) => {}
+            Ok(swept) => tracing::info!(swept, "removed SSH keys of desktops no longer paired"),
+            Err(error) => tracing::warn!(error = %error, "could not check authorized_keys"),
+        }
+        self.ssh_access = Some(access);
+    }
+
+    /// Where desktops are let in, when they can be.
+    pub(crate) fn ssh_access(&self) -> Result<&SshAccess> {
+        self.ssh_access
+            .as_ref()
+            .ok_or_else(|| crate::ssh_access::Error::Unsupported.into())
+    }
+
+    /// How the desktop `device` logs in over SSH, when it is one. Blocking.
+    pub(crate) fn desktop_login(&self, device: &DeviceId) -> Result<Option<Login>> {
+        let desktop = self
+            .devices
+            .get(device)
+            .is_some_and(|record| record.ssh.is_some());
+        if !desktop {
+            return Ok(None);
+        }
+        Ok(Some(Login::here(&self.ssh_access()?.host_key_dir)?))
+    }
+
+    /// Keeps the SSH key a desktop sent with `claim`.
+    pub(crate) fn claimed_ssh(&mut self, claim: &ClaimId, key: SshKey) {
+        self.pairings.claimed_ssh(claim, key);
+    }
+
+    /// Removes `device`'s `authorized_keys` line, if it had one. A failure
+    /// is logged rather than keeping the device: its relay sessions end
+    /// with it either way, and the line admits only loopback.
+    fn forget_ssh(&self, device: &DeviceId) {
+        let Some(access) = &self.ssh_access else {
+            return;
+        };
+        if let Err(error) = access.keys.remove(device) {
+            tracing::warn!(error = %error, "could not remove a desktop's SSH key");
+        }
     }
 
     /// Changes whenever a device loses access before its sessions expire.
@@ -573,8 +636,21 @@ impl Auth {
         }
         let devices = &mut self.devices;
         let links = self.links.allowed(hosts);
+        let keys = self.ssh_access.as_ref().map(|access| &access.keys);
         self.pairings.answer(id, allow, now_ms, |device| {
-            devices.add_with(device.clone(), now_ms, None, links, share_github)
+            // The key goes in before the device is kept, and comes out
+            // again if keeping it fails, so neither outlives the other.
+            if let Some(key) = &device.ssh {
+                let keys = keys.ok_or(crate::ssh_access::Error::Unsupported)?;
+                keys.allow(&device.id, key)?;
+            }
+            devices
+                .add_with(device.clone(), now_ms, None, links, share_github)
+                .inspect_err(|_| {
+                    if let (Some(keys), Some(_)) = (keys, &device.ssh) {
+                        let _ = keys.remove(&device.id);
+                    }
+                })
         })?;
         self.sync_apps();
         self.pairings.state(id, now_ms)
@@ -733,6 +809,7 @@ impl Auth {
         let _ = self.handoffs.forget(device);
         self.sessions.end_device(device);
         self.revoked();
+        self.forget_ssh(device);
         let revoked = self.devices.revoke(device);
         self.sync_apps();
         revoked
@@ -860,6 +937,7 @@ impl Auth {
                 passkey: None,
                 public_key,
                 relay: None,
+                ssh: None,
             },
             now_ms,
             Some(via),
@@ -876,6 +954,7 @@ impl Auth {
         let expired = self.devices.expire_idle(now_ms, idle_ms)?;
         for device in &expired {
             self.sessions.end_device(device);
+            self.forget_ssh(device);
         }
         if !expired.is_empty() {
             self.revoked();

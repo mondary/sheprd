@@ -93,7 +93,12 @@ pub async fn run(options: Options) -> Result<()> {
     let push = Vapid::load_or_create(&options.state_dir)
         .and_then(|vapid| Sender::new(vapid, PUSH_SUBJECT))
         .ok();
-    let auth = Auth::load(&options.state_dir, Limits::default())?;
+    let mut auth = Auth::load(&options.state_dir, Limits::default())?;
+    // Desktops paired over Bluetooth log in over SSH through the relays.
+    match crate::ssh_access::SshAccess::of_user() {
+        Ok(access) => auth.set_ssh_access(access),
+        Err(error) => tracing::info!(error = %error, "desktops cannot be let in over SSH"),
+    }
     let apps = auth.apps();
     let apns = crate::apns::Sender::load(&options.state_dir).map_err(crate::apns::Error::from)?;
     // Only origins this computer's own authority serves may be remembered.

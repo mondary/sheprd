@@ -269,8 +269,22 @@ impl SheprdWindow {
     ) -> Result<(), super::StartError> {
         self.kept_in_front().ok_or(super::StartError::NoWorkspace)?;
         let (scope, workspace) = self.browser_key().ok_or(super::StartError::NoWorkspace)?;
+        let cwd = self.front_workspace_cwd();
+        self.start_core_chat_tab(agent, scope, workspace, cwd, cx)
+    }
+
+    /// Opens a tab of kept workspace `workspace` in `scope` running a chat
+    /// with `agent` in `cwd`.
+    pub(crate) fn start_core_chat_tab(
+        &mut self,
+        agent: Agent,
+        scope: crate::browser::Scope,
+        workspace: String,
+        cwd: Option<std::path::PathBuf>,
+        cx: &gpui::App,
+    ) -> Result<(), super::StartError> {
         let mut spawn = self.prepare_core_chat(agent, &crate::core_terminals::Host::of(&scope))?;
-        spawn.cwd = self.front_workspace_cwd();
+        spawn.cwd = cwd;
         self.chats.last_started = Some(agent);
         self.start_core_program(Purpose::Tab { scope, workspace }, spawn, cx);
         Ok(())

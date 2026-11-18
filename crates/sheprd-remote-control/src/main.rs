@@ -7,6 +7,7 @@
 use sheprd_remote_control::{
     app::{enroll, relay_enroll, shortcuts, tags},
     control::DeviceId,
+    desktop,
     server::{self, Invocation},
     shared_relays,
 };
@@ -51,6 +52,12 @@ fn main() -> ExitCode {
                 let offer = read_offer(offer, MAX_INPUT)?;
                 print_json(&tags::exchange(state_dir, offer)?)
             });
+        }
+        Ok(Invocation::DesktopPair { state_dir, name }) => {
+            return desktop::run_pair(state_dir.as_deref(), name);
+        }
+        Ok(Invocation::RelayConnect { state_dir, host }) => {
+            return desktop::run_connect(state_dir.as_deref(), &host);
         }
         Ok(Invocation::Help) => {
             print!("{}", server::USAGE);

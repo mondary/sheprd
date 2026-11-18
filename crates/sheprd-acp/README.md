@@ -377,23 +377,37 @@ session's earlier prompts, whichever client sent them.
 ## Choosing the agent
 
 `--choose` starts a built-in agent but lets any client switch the chat to
-another one installed on the same machine, until the first prompt reaches the
-agent. The transcript then carries `harnesses`: the agents installed here (and
+another one installed on the same machine whenever the agent is idle. A
+switch during a turn is refused with `agent_fixed`. The transcript then carries `harnesses`: the agents installed here (and
 the one the chat started with, even when only `npx` can run it) and the one
 running now. **Ctrl+O** shows it as the first row here; a client sends
 `SetAgent`.
 
 A switch stops the running agent on a thread of its own and starts the new one
-in the same folder, with `--acp` as given. Nothing the old agent said is kept:
-the program starts a new epoch, so every client replaces its transcript with
-the new agent's, and replies from the old process are ignored. Prompts typed
+in the same folder, with `--acp` as given. The conversation stays; what only
+the old agent held (its session, modes, settings, context use, and
+sub-agents) goes. The program starts a new epoch, so every client replaces
+its transcript, and replies from the old process are ignored. Prompts typed
 while it was still starting stay queued for the new agent. Herdr's display
 name for the pane, the tab label where it still names the old agent, and the
 restore record all follow the switch. An agent that fails to start leaves the
 choice open, so another can be picked.
 
-The first prompt the agent receives closes the choice for good
-(`harnesses` becomes empty): the conversation now lives in that agent.
+Once a prompt has reached an agent, the one taking over is handed the
+conversation with the user's next prompt, as a block of quoted context ahead
+of what the user wrote: the first prompt, the latest prompt and reply, then
+the newest entries within about 16,000 tokens, each cut at 4 KiB. Reasoning,
+turn summaries, and the program's notices are left out, and the transcript
+says how much went and how much was left out for length. The quote is
+fenced by a boundary made at random for each handoff, and every quoted line
+starts with `| `, so nothing in a reply or tool output can end the quote or
+pass for a request. An agent switched
+back to continues its own earlier session (`session/load`, or `--resume` for
+an agent reached natively), whose replay of its history is ignored, and is
+handed only what happened since it last took part. When it cannot continue
+that session, it starts a new one and is handed the whole conversation. The
+handoff is built by `sheprd_chat_protocol::handoff`.
+
 `--choose` refuses a custom command, extra agent arguments, `--load`, and
 `--resume`, since another agent could not take any of them over.
 

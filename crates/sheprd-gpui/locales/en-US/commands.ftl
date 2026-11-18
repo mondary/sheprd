@@ -95,6 +95,7 @@ commands-swap-pane-left = Swap Pane Left
 commands-swap-pane-right = Swap Pane Right
 commands-swap-pane-up = Swap Pane Up
 commands-themes = Themes
+commands-toggle-all-hosts = Collapse or Expand All Hosts
 commands-toggle-annotate = Toggle Annotate
 commands-toggle-full-screen = Toggle Full Screen
 commands-toggle-sidebar = Toggle Sidebar

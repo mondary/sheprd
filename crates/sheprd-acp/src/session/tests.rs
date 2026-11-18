@@ -24,9 +24,11 @@ mod opencode;
 mod origin;
 mod permissions;
 mod prompt_titles;
+mod questions;
 mod resume;
 mod settings;
 mod streaming;
+mod threads;
 
 type Reports = Rc<RefCell<Vec<Activity>>>;
 type Prompts = Rc<RefCell<Vec<String>>>;

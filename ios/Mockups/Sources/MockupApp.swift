@@ -76,6 +76,19 @@ struct Mockup: View {
         case ("newtab", "B"): NewTabMenu(state: state)
         case ("newtab", "C"): NewTabQuick(state: state)
         case ("newtab", "D"): NewTabRowSheet(state: state)
+        case ("tabs", "Now"): TabListNow()
+        case ("tabs", "A"): TabListPromptTitle()
+        case ("tabs", "B"): TabListCentered()
+        case ("tabs", "C"): TabListThreeLines()
+        case ("tabs", "D"): TabListOneLine()
+        case ("counts", "A"): HomeCountsChips(state: state)
+        case ("counts", "B"): HomeCountsCard(state: state)
+        case ("counts", "C"): HomeCountsTiles(state: state)
+        case ("counts", "D"): HomeCountsLine(state: state)
+        case ("ask", "A"): QuestionScrollSheet(state: state)
+        case ("ask", "B"): QuestionListSheet(state: state)
+        case ("ask", "C"): QuestionInlineCard(state: state)
+        case ("ask", "D"): QuestionPages(state: state)
         case ("voice", "A"): VoiceSheetLayout(state: state)
         case ("voice", "B"): VoiceChecklist(state: state)
         case ("voice", "C"): VoiceAmbient(state: state)
@@ -99,6 +112,7 @@ struct Mockup: View {
         case ("ghsignin", "A"): GHSignInSheet(state: state)
         case ("ghsignin", "B"): GHSignInSteps(state: state)
         case ("ghsignin", "C"): GHSignInInline(state: state)
+        case ("agentpr", _): AgentPRHome(variant: variant)
         default: Text("No mockup \(screen) \(variant)")
         }
     }
@@ -120,6 +134,11 @@ struct Catalog: View {
         ("spaces", "A", 0), ("spaces", "A", 1), ("spaces", "B", 0), ("spaces", "B", 1),
         ("spaces", "C", 0), ("spaces", "C", 1), ("spaces", "D", 0), ("spaces", "D", 1), ("spaces", "Mix", 0), ("spaces", "Mix", 1),
         ("newtab", "A", 0), ("newtab", "B", 0), ("newtab", "B", 1), ("newtab", "C", 0), ("newtab", "C", 1), ("newtab", "D", 0), ("newtab", "D", 1),
+        ("tabs", "Now", 0), ("tabs", "A", 0), ("tabs", "B", 0), ("tabs", "C", 0), ("tabs", "D", 0),
+        ("counts", "A", 0), ("counts", "A", 1), ("counts", "B", 0), ("counts", "B", 1),
+        ("counts", "C", 0), ("counts", "C", 1), ("counts", "D", 0), ("counts", "D", 1),
+        ("ask", "A", 0), ("ask", "A", 1), ("ask", "B", 0), ("ask", "B", 1),
+        ("ask", "C", 0), ("ask", "C", 1), ("ask", "D", 0), ("ask", "D", 1),
         ("voice", "A", 0), ("voice", "A", 1), ("voice", "A", 2), ("voice", "A", 3),
         ("voice", "B", 0), ("voice", "B", 1), ("voice", "B", 2), ("voice", "B", 3),
         ("voice", "C", 0), ("voice", "C", 1), ("voice", "C", 2), ("voice", "C", 3),
@@ -135,7 +154,9 @@ struct Catalog: View {
         ("ghsettings", "D", 0), ("ghsettings", "D", 1),
         ("ghsignin", "A", 0), ("ghsignin", "A", 1), ("ghsignin", "A", 2), ("ghsignin", "A", 3), ("ghsignin", "A", 4),
         ("ghsignin", "B", 0), ("ghsignin", "B", 1), ("ghsignin", "B", 2), ("ghsignin", "B", 3), ("ghsignin", "B", 4),
-        ("ghsignin", "C", 0), ("ghsignin", "C", 1), ("ghsignin", "C", 2), ("ghsignin", "C", 3), ("ghsignin", "C", 4),
+        ("ghsignin", "C", 0),
+        ("ghsignin", "C", 1), ("ghsignin", "C", 2), ("ghsignin", "C", 3), ("ghsignin", "C", 4),
+        ("agentpr", "A", 0), ("agentpr", "B", 0), ("agentpr", "C", 0),
     ]
 
     var body: some View {

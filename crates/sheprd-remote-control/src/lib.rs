@@ -12,6 +12,8 @@ pub mod app;
 mod auth;
 pub mod control;
 pub mod core_target;
+#[cfg(feature = "server")]
+pub mod desktop;
 mod error;
 #[cfg(feature = "server")]
 mod hub;
@@ -26,6 +28,8 @@ mod relay;
 pub mod relay_label;
 #[cfg(feature = "server")]
 pub mod server;
+#[cfg(feature = "server")]
+mod ssh_access;
 #[cfg(feature = "server")]
 mod tls;
 #[cfg(feature = "server")]

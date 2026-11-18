@@ -339,6 +339,8 @@ impl Batch {
                 }
             }
             Event::Connection => self.connection = true,
+            // Only the lists show it, through home.
+            Event::Summary => {}
         }
     }
 
