@@ -3,13 +3,13 @@
 //! caches only.
 
 use super::{
-    DEVICE_FOOTER_HEIGHT, HOST_ARROW_WIDTH, STATUS_WIDTH, SidebarDrag,
+    HOST_ARROW_WIDTH, STATUS_WIDTH,
     agents::Indicators,
     agents::groups::agents_group,
     agents_sort,
     cell::{Cell, Fold, RowContext, RowData, WorkspaceRow, layout_for},
     label_text, layout, line_height,
-    reorder::{self, Plan},
+    reorder::Plan,
     row::{RowIcon, RowLift, RowTree},
     scaled, sidebar_width, sticky,
     tokens::{self, SpaceContext},
@@ -26,6 +26,7 @@ use gpui::{prelude::*, *};
 
 mod agent_rows;
 mod device_tree;
+mod drag_handle;
 mod edges;
 mod fold_hosts;
 mod header;
@@ -51,7 +52,6 @@ impl SheprdWindow {
         let menu_target = self.workspace_menu_target();
         let layout = look.density;
         let content_x = look.content_x();
-        let view = cx.entity().downgrade();
         let font = &self.config.sidebar;
         let spaces_custom = self.config.usage.inline
             && self.config.sidebar_layout.spaces != crate::config::SpaceLayout::default();
@@ -904,98 +904,12 @@ impl SheprdWindow {
                 }
             })
             .child(self.sidebar_width_edge(width, cx))
-            .child(
-                canvas(
-                    |_, _, _| (),
-                    move |bounds, _, window, _| {
-                        // Capture globally so dragging continues outside the narrow divider,
-                        // and terminal handlers never receive the resize gesture's release.
-                        let moving = view.clone();
-                        let device_drop = device_plan.map(|plan| plan.drop);
-                        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
-                            if phase == DispatchPhase::Capture {
-                                let _ = moving.update(cx, |this, cx| {
-                                    let scroll = this.sidebar_scroll[0].clone();
-                                    if this.move_workspace_drag(
-                                        event.position,
-                                        event.pressed_button == Some(MouseButton::Left),
-                                        |lift| {
-                                            reorder::resolve(
-                                                &drop_rows,
-                                                &drop_requests,
-                                                drop_dragged,
-                                                &scroll,
-                                                lift,
-                                            )
-                                        },
-                                        cx,
-                                    ) || this.move_device_drag(
-                                        event.position,
-                                        event.pressed_button == Some(MouseButton::Left),
-                                        device_drop.as_ref(),
-                                        cx,
-                                    ) {
-                                        cx.stop_propagation();
-                                    } else if let Some(drag) = this.sidebar_drag {
-                                        match drag {
-                                            SidebarDrag::Width { start, width } => {
-                                                this.sidebar_width = Some(sidebar_width(
-                                                    // The edge is on the sidebar's end.
-                                                    Some(
-                                                        width
-                                                            + crate::direction::toward_end(
-                                                                f32::from(event.position.x) - start,
-                                                            ),
-                                                    ),
-                                                    f32::from(window.viewport_size().width),
-                                                ));
-                                            }
-                                            SidebarDrag::Split => {
-                                                let footer = if this.device_footer_shown() {
-                                                    DEVICE_FOOTER_HEIGHT
-                                                } else {
-                                                    0.
-                                                };
-                                                let height =
-                                                    (f32::from(bounds.size.height) - 6. - footer)
-                                                        .max(1.);
-                                                this.sidebar_split = Some(
-                                                    ((f32::from(
-                                                        event.position.y - bounds.origin.y,
-                                                    ) - 3.)
-                                                        / height)
-                                                        .clamp(0.1, 0.9),
-                                                );
-                                            }
-                                        }
-                                        cx.stop_propagation();
-                                        cx.notify();
-                                    }
-                                });
-                            }
-                        });
-                        let released = view.clone();
-                        window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
-                            if phase == DispatchPhase::Capture && event.button == MouseButton::Left
-                            {
-                                let _ = released.update(cx, |this, cx| {
-                                    // A lifted row's release is its drop, not a click.
-                                    if this.release_workspace_drag(cx)
-                                        || this.release_device_drag(cx)
-                                    {
-                                        cx.stop_propagation();
-                                    } else if this.sidebar_drag.take().is_some() {
-                                        this.save_chrome();
-                                        cx.stop_propagation();
-                                        cx.notify();
-                                    }
-                                });
-                            }
-                        });
-                    },
-                )
-                .absolute()
-                .size_full(),
-            )
+            .child(drag_handle::drag_handle(
+                cx.entity().downgrade(),
+                drop_rows,
+                drop_requests,
+                drop_dragged,
+                device_plan.map(|plan| plan.drop),
+            ))
     }
 }

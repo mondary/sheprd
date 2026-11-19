@@ -281,7 +281,7 @@ impl WorkspaceMenuAction {
     /// Whether the popover draws the action in its header, not with the
     /// tiles and rows.
     pub(crate) fn in_header(self) -> bool {
-        matches!(self, Self::Mute | Self::Unmute)
+        matches!(self, Self::Mute | Self::Unmute | Self::RevealInFileManager)
     }
 
     /// Embedded icon for the row, so each action is recognizable before reading.

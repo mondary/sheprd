@@ -86,6 +86,7 @@ impl WorkspaceTarget {
             boot_id: String::new(),
             id: workspace.id.clone(),
             label: workspace.label.clone(),
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             cwd: workspace.cwd.clone(),
             worktree: workspace.worktree.as_ref().map(|tree| ClientShellWorktree {
                 key: tree.key.clone(),

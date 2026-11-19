@@ -82,7 +82,7 @@ pub(crate) struct Browser {
     pub(super) px0: super::px0::Pages,
     /// Workspaces from each endpoint's last snapshot, so closing a project's
     /// final tab is noticed even while another endpoint is selected.
-    workspaces: HashMap<Scope, (String, u64, HashMap<String, sheprd_session::Workspace>)>,
+    workspaces: HashMap<Scope, (String, HashMap<String, sheprd_session::Workspace>)>,
     /// The Herdr tabs of the last snapshot, with its boot and revision: one
     /// missing from the next snapshot of the same boot, in a workspace still
     /// open, was closed and can be reopened.
@@ -404,16 +404,6 @@ impl SheprdWindow {
                 continue;
             };
             let scope = scope(endpoint);
-            let unchanged =
-                self.browser
-                    .workspaces
-                    .get(&scope)
-                    .is_some_and(|(boot, revision, _)| {
-                        boot == &snapshot.boot_id && *revision == snapshot.revision
-                    });
-            if unchanged {
-                continue;
-            }
             let current: HashMap<String, sheprd_session::Workspace> = live
                 .session()
                 .map(|session| {
@@ -425,13 +415,31 @@ impl SheprdWindow {
                         .collect()
                 })
                 .unwrap_or_default();
-            let previous = self.browser.workspaces.insert(
-                scope.clone(),
-                (snapshot.boot_id.clone(), snapshot.revision, current.clone()),
-            );
+            // The same boot showing the same workspaces proves nothing new. A
+            // revision alone does not: a snapshot may drop a workspace without
+            // bumping it, and a missing id of the same boot is a close.
+            let unchanged = self
+                .browser
+                .workspaces
+                .get(&scope)
+                .is_some_and(|(boot, seen)| {
+                    boot == &snapshot.boot_id
+                        && seen.len() == current.len()
+                        && current.keys().all(|id| seen.contains_key(id))
+                });
+            if unchanged {
+                // Same workspaces, but their tabs or labels may have moved.
+                if let Some((_, seen)) = self.browser.workspaces.get_mut(&scope) {
+                    *seen = current;
+                }
+                continue;
+            }
+            let previous = self
+                .browser
+                .workspaces
+                .insert(scope.clone(), (snapshot.boot_id.clone(), current.clone()));
             // A restarted daemon or another session proves nothing was closed.
-            let Some((_, _, seen)) = previous.filter(|(boot, _, _)| boot == &snapshot.boot_id)
-            else {
+            let Some((_, seen)) = previous.filter(|(boot, _)| boot == &snapshot.boot_id) else {
                 continue;
             };
             let closed: Vec<sheprd_session::Workspace> = seen
