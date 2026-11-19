@@ -198,6 +198,9 @@ pub(crate) enum WorkspaceMenuAction {
     /// applied at once: the mute belongs to this client, never the daemon.
     Mute,
     Unmute,
+    /// Show a local workspace folder in Finder or the system file manager.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    RevealInFileManager,
 }
 
 impl Page {
@@ -322,6 +325,8 @@ impl WorkspaceMenuAction {
             Self::Script(_) => "icons/play.svg",
             Self::Mute => crate::icons::MUTED,
             Self::Unmute => "icons/bell.svg",
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            Self::RevealInFileManager => "icons/file.svg",
             Self::PullRequest => return None,
         })
     }

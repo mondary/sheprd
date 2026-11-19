@@ -283,6 +283,7 @@ impl SheprdWindow {
                     return;
                 };
                 if self.is_closed_project_row(&endpoint, &workspace, cx) {
+                    self.open_closed_project_menu(&endpoint, &workspace, anchor, window, cx);
                     return;
                 }
                 // The sheet opens over the row without selecting it; a row on

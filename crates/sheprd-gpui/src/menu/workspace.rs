@@ -33,6 +33,7 @@ pub(crate) struct WorkspaceTarget {
     pub(super) boot_id: String,
     pub(super) id: String,
     pub(super) label: String,
+    pub(super) cwd: String,
     pub(super) worktree: Option<ClientShellWorktree>,
     pub(super) close_members: Vec<String>,
     /// Whether linked worktrees of this parent's repository are open, so its
@@ -48,6 +49,8 @@ pub(crate) struct WorkspaceTarget {
     /// Who carries out what the menu asks: Herdr 1's daemon, or the app for
     /// a workspace it keeps for Herdr 2 (`kept.rs`).
     pub(super) keeper: sheprd_session::Keeper,
+    /// A remembered folder with no live daemon workspace behind its row.
+    pub(super) retained: bool,
     /// Whether the user muted the workspace's notifications when the menu
     /// opened, which picks what the toggle in its header does.
     pub(super) muted: bool,
@@ -99,6 +102,7 @@ impl WorkspaceTarget {
             boot_id: snapshot.boot_id.clone(),
             id: workspace.workspace_id.clone(),
             label: workspace.label.clone(),
+            cwd: workspace.new_workspace_cwd.clone(),
             worktree: known_worktree(workspace),
             close_members: close_members(snapshot, workspace),
             heads_group: heads_group(snapshot, workspace),
@@ -107,6 +111,26 @@ impl WorkspaceTarget {
             source: Source::of(workspace),
             keeper: sheprd_session::Keeper::Herdr1,
             muted: false,
+            retained: false,
+        }
+    }
+
+    /// A saved project row, whose folder is available without a live workspace.
+    pub(super) fn retained(id: String, label: String, cwd: String, branch: Option<String>) -> Self {
+        Self {
+            boot_id: String::new(),
+            id,
+            label,
+            cwd: cwd.clone(),
+            worktree: None,
+            close_members: Vec::new(),
+            heads_group: false,
+            branch,
+            base: None,
+            source: Source::Directory(cwd),
+            keeper: sheprd_session::Keeper::Herdr1,
+            muted: false,
+            retained: true,
         }
     }
 
@@ -488,6 +512,80 @@ fn heads_group(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace)
 }
 
 impl SheprdWindow {
+    /// The reveal action and its platform-specific wording, for local paths.
+    fn reveal_item(&self) -> Option<(WorkspaceMenuAction, Label)> {
+        if self.selected_is_remote() {
+            return None;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Some((
+                WorkspaceMenuAction::RevealInFileManager,
+                Label::REVEAL_IN_FINDER,
+            ))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Some((
+                WorkspaceMenuAction::RevealInFileManager,
+                Label::REVEAL_IN_FILE_MANAGER,
+            ))
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            None
+        }
+    }
+
+    /// Opens the minimal menu for a project row retained after tab closure.
+    pub(crate) fn open_closed_project_menu(
+        &mut self,
+        endpoint: &str,
+        id: &str,
+        anchor: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.menu.page.is_some() {
+            return;
+        }
+        let project = self
+            .endpoints
+            .iter()
+            .find(|host| host.id == endpoint)
+            .and_then(|host| {
+                let scope = crate::browser::scope(host);
+                cx.try_global::<crate::browser::Store>()
+                    .and_then(|store| store.closed_project(&scope, id))
+                    .cloned()
+            });
+        let Some(project) = project else {
+            return;
+        };
+        if !self.select_endpoint(endpoint, cx) || self.reveal_item().is_none() {
+            return;
+        }
+        self.hover = None;
+        self.hover_menu = None;
+        self.menu.reset();
+        self.menu.endpoint_target = (
+            self.selection_epoch,
+            self.endpoints[self.selected_endpoint].generation,
+        );
+        self.menu.target = Some(WorkspaceTarget::retained(
+            project.id,
+            project.label,
+            project.cwd,
+            project.branch,
+        ));
+        self.menu.anchor = anchor;
+        self.menu.page = Some(Page::Workspace);
+        self.menu.opening_right_click = true;
+        self.discard_composition(cx);
+        window.focus(&self.menu.focus, cx);
+        cx.notify();
+    }
+
     /// The selected endpoint's workspace a workspace menu is open for. A
     /// hover menu can target a row that is not focused, so the row marks
     /// itself while the pointer is over the menu instead.
@@ -660,6 +758,9 @@ impl SheprdWindow {
         let Some(target) = &self.menu.target else {
             return vec![];
         };
+        if target.retained {
+            return self.reveal_item().into_iter().collect();
+        }
         if target.keeper == sheprd_session::Keeper::App {
             // Scripts run on the shown host, so only for a workspace it
             // keeps: remote ones through the host's POSIX shell, including
@@ -676,6 +777,9 @@ impl SheprdWindow {
                 self.fan_out_item(),
             );
             items.extend(self.teleport_items());
+            if let Some(item) = self.reveal_item() {
+                items.push(item);
+            }
             return items;
         }
         let mut items = vec![if target.muted {
@@ -697,6 +801,9 @@ impl SheprdWindow {
         }
         if self.note_checkout().is_some() {
             items.push((Dialog(WorkspaceAction::Note), Label::NOTE));
+        }
+        if let Some(item) = self.reveal_item() {
+            items.push(item);
         }
         if target.worktree.is_some() && self.orchestrator_host() {
             items.push((WorkspaceMenuAction::Orchestrator, Label::ORCHESTRATOR));
@@ -970,6 +1077,13 @@ impl SheprdWindow {
                     let folder = self.workspace_folder(&workspace);
                     self.open_orchestrator_in(workspace, folder, window, cx);
                 }
+            }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            WorkspaceMenuAction::RevealInFileManager => {
+                if let Some(target) = &self.menu.target {
+                    crate::settings_window::reveal_path(std::path::PathBuf::from(&target.cwd), cx);
+                }
+                self.dismiss_menu(window, cx);
             }
         }
     }
