@@ -513,6 +513,13 @@ impl SheprdWindow {
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
                             if closed_project {
+                                this.open_closed_project_menu(
+                                    &context_endpoint,
+                                    &context_id,
+                                    event.position,
+                                    window,
+                                    cx,
+                                );
                                 return;
                             }
                             if this.navigate_endpoint(

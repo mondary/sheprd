@@ -86,6 +86,7 @@ impl WorkspaceTarget {
             boot_id: String::new(),
             id: workspace.id.clone(),
             label: workspace.label.clone(),
+            cwd: workspace.cwd.clone(),
             worktree: workspace.worktree.as_ref().map(|tree| ClientShellWorktree {
                 key: tree.key.clone(),
                 label: tree.label.clone(),
@@ -103,6 +104,7 @@ impl WorkspaceTarget {
             },
             keeper: Keeper::App,
             muted: false,
+            retained: false,
         }
     }
 }
