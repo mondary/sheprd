@@ -232,6 +232,41 @@ fn configured_folder_groups_nest_direct_project_workspaces_and_collapse_them() {
 }
 
 #[test]
+fn a_closed_project_stays_under_its_hub_and_can_be_folded() {
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(2)).workspaces;
+    let root = "/work/Chrome";
+    workspaces[0].cwd = root.into();
+    workspaces[0].label = "Chrome".into();
+    workspaces.truncate(1);
+    workspaces.push(sheprd_session::Workspace {
+        ahead_behind: None,
+        branch: Some("main".into()),
+        cwd: "/work/Chrome/PKshortcuts".into(),
+        custom_label: false,
+        id: "closed-project-1".into(),
+        keeper: sheprd_session::Keeper::Herdr1,
+        label: "PKshortcuts".into(),
+        status: AgentStatus::Idle,
+        tabs: Vec::new(),
+        tokens: Vec::new(),
+        worktree: None,
+    });
+    let roots = [root.to_owned()];
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &Default::default(), &roots),
+        vec![
+            (0, false, Some("folder:/work/Chrome".into())),
+            (1, true, None),
+        ]
+    );
+    let collapsed = std::collections::HashSet::from(["folder:/work/Chrome".into()]);
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &roots),
+        vec![(0, false, Some("folder:/work/Chrome".into()))]
+    );
+}
+
+#[test]
 fn folders_with_git_children_and_named_prefixes_become_groups_automatically() {
     let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(4)).workspaces;
     for workspace in &mut workspaces {

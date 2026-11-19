@@ -107,7 +107,7 @@ impl SheprdWindow {
                     .and_then(|host| self.system_load.get(host))
                     .and_then(|load| load.latest().copied());
                 let folded = multi && endpoint.collapsed;
-                let sessions = self.sessions(index);
+                let sessions = self.sidebar_sessions(index, cx);
                 let rows = if folded {
                     Vec::new()
                 } else {
@@ -136,7 +136,7 @@ impl SheprdWindow {
             return Vec::new();
         };
         let none = HashSet::new();
-        let sessions = self.sessions(self.selected_endpoint);
+        let sessions = self.sidebar_sessions(self.selected_endpoint, cx);
         let silenced = self.silenced(endpoint, cx);
         let kept_front = self.kept_in_front();
         let mut number = 0;
@@ -244,6 +244,7 @@ impl SheprdWindow {
 
     /// One row: what the window's row shows, its device, and its fold.
     fn hosted_row(&self, workspace: &Workspace, child: bool, place: &Place<'_>, cx: &App) -> Value {
+        let retained = self.is_closed_project_row(&place.endpoint.id, &workspace.id, cx);
         let note = workspace_note(
             workspace,
             crate::worktree_notes::Notes::of(cx),
@@ -292,6 +293,7 @@ impl SheprdWindow {
             // The number's color says the pull request's state, as the row's
             // own badge does.
             "pr_color": pr.map(|pr| hex(pr.color)),
+            "retained": retained,
             "removed": counts.map(|counts| counts.deletions.clone()),
             "repo": tree.map(|tree| tree.label.clone()),
             "repo_key": tree.map(|tree| tree.key.clone()),

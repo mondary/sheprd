@@ -214,7 +214,7 @@ impl SheprdWindow {
             };
             let live = if selected { &self.live } else { &endpoint.live };
             // Herdr 1's workspaces, then those the app keeps for Herdr 2.
-            let sessions = self.sessions(endpoint_index);
+            let sessions = self.sidebar_sessions(endpoint_index, cx);
             if sessions.is_empty() {
                 continue;
             }
@@ -316,6 +316,7 @@ impl SheprdWindow {
                     }
                     space_rows += 1;
                     let id = workspace.id.clone();
+                    let closed_project = self.is_closed_project_row(&endpoint_id, &id, cx);
                     let press_id = id.clone();
                     let context_id = id.clone();
                     let hover_id = id.clone();
@@ -511,6 +512,9 @@ impl SheprdWindow {
                         MouseButton::Right,
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
+                            if closed_project {
+                                return;
+                            }
                             if this.navigate_endpoint(
                                 &context_endpoint,
                                 NavigationTarget::Workspace(&context_id),
@@ -547,17 +551,14 @@ impl SheprdWindow {
                         row.debug_selector(|| format!("workspace-{endpoint_id}-{id}"))
                     })
                     .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
-                        let selected = this.navigate_endpoint(
-                            &navigate_endpoint,
-                            NavigationTarget::Workspace(&id),
-                            cx,
-                        );
+                        let selected =
+                            this.activate_sidebar_workspace(&navigate_endpoint, &id, window, cx);
                         window.focus(&this.focus, cx);
                         // The first click of a double-click has already selected
                         // the row, so the second only opens the rename dialog its
                         // menu's Rename opens, which takes focus. The fold chevron
                         // stops its clicks, so folding fast never renames.
-                        if selected && event.click_count() == 2 {
+                        if selected && !closed_project && event.click_count() == 2 {
                             this.open_workspace_dialog_for(
                                 &id,
                                 crate::menu::WorkspaceAction::Rename,
@@ -571,14 +572,17 @@ impl SheprdWindow {
                     // another endpoint's menu would have to select it first, and
                     // resting the pointer must not switch which daemon is shown.
                     // The feature is opt-in, so rows stay unarmed without it.
-                    .when(selected && self.config.features.sidebar_hover_menu, |row| {
-                        row.on_hover(cx.listener(move |this, hovered: &bool, window, _| {
-                            this.hover_workspace(&hover_id, *hovered, window);
-                        }))
-                    })
+                    .when(
+                        selected && !closed_project && self.config.features.sidebar_hover_menu,
+                        |row| {
+                            row.on_hover(cx.listener(move |this, hovered: &bool, window, _| {
+                                this.hover_workspace(&hover_id, *hovered, window);
+                            }))
+                        },
+                    )
                     // Holding a press lifts the row for reordering. Another
                     // endpoint's rows would have to select it first.
-                    .when(selected, |row| {
+                    .when(selected && !closed_project, |row| {
                         row.on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
