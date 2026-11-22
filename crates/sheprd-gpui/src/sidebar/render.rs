@@ -14,7 +14,10 @@ use super::{
     scaled, sidebar_width, sticky,
     tokens::{self, SpaceContext},
     visible_workspace_entries, wash,
-    workspaces::{displayed_workspace_status, workspace_badge, workspace_label, workspace_note},
+    workspaces::{
+        FolderStatuses, displayed_workspace_status, workspace_badge, workspace_label,
+        workspace_note,
+    },
 };
 use crate::direction::Logical;
 use crate::i18n::fl;
@@ -241,6 +244,13 @@ impl SheprdWindow {
                     collapsed_repos,
                     &self.config.sidebar_style.workspace_groups,
                 );
+                // One walk per session, not per row: a folded hub's status is
+                // the same for the whole frame.
+                let folder_statuses = FolderStatuses::of(
+                    workspaces,
+                    collapsed_repos,
+                    &self.config.sidebar_style.workspace_groups,
+                );
                 let drag = self.workspace_drag.as_ref().filter(|drag| {
                     selected && drag.keeper == keeper && drag.previewing(workspaces)
                 });
@@ -289,9 +299,6 @@ impl SheprdWindow {
                     let workspace = &workspaces[index];
                     let linked = crate::worktree_identity::is_linked(workspace);
                     let focused = front == Some(workspace.id.as_str());
-                    // The focused Git checkout follows the Herdr focus even
-                    // when a kept Herdr 2 tab owns the visible focus above it.
-                    let git_focused = session.focused.as_deref() == Some(workspace.id.as_str());
                     if focused {
                         highlighted[0] = Some(space_rows);
                     }
@@ -345,7 +352,7 @@ impl SheprdWindow {
                             workspaces,
                             workspace,
                             collapsed_repos,
-                            &self.config.sidebar_style.workspace_groups,
+                            &folder_statuses,
                         )
                     } else {
                         workspace.status
@@ -484,7 +491,6 @@ impl SheprdWindow {
                             grouped,
                             badge: workspace_badge(
                                 workspace,
-                                git_focused,
                                 pr_view.as_ref().map(|view| (&self.menu.pr_cache, view)),
                                 (
                                     (endpoint_index == 0).then_some(&self.git),

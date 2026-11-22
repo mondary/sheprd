@@ -69,8 +69,17 @@ fn trim_group_path(path: &str) -> &str {
 /// Open workspaces directly beneath configured folders, grouped beneath the
 /// workspace opened on each folder itself. The folder workspace is the
 /// selectable, foldable head; the children are ordinary workspaces and keep
-/// their own daemon ids.
+/// their own daemon ids. A linked worktree is never a folder child: it stays
+/// under its own repository's row, inside the hub or out of it.
 fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup> {
+    let grouped = grouped_keys(workspaces);
+    // A checkout some repository's row claims as its linked worktree.
+    let repository_linked = |workspace: &Workspace| {
+        workspace
+            .worktree
+            .as_ref()
+            .is_some_and(|tree| tree.linked && grouped.contains(tree.key.as_str()))
+    };
     let mut candidates = HashMap::<String, (usize, FolderRule)>::new();
     for root in roots.iter().filter_map(|root| expand_group_root(root)) {
         if let Some(head) = workspaces
@@ -85,9 +94,10 @@ fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup>
         let children: Vec<_> = workspaces
             .iter()
             .filter(|workspace| {
-                Path::new(&workspace.cwd)
-                    .parent()
-                    .is_some_and(|path| trim_group_path(&path.to_string_lossy()) == root)
+                !repository_linked(workspace)
+                    && Path::new(&workspace.cwd)
+                        .parent()
+                        .is_some_and(|path| trim_group_path(&path.to_string_lossy()) == root)
             })
             .collect();
         let git_children = children
@@ -134,6 +144,7 @@ fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup>
             .filter(|(index, workspace)| {
                 *index != head
                     && !claimed.contains(trim_group_path(&workspace.cwd))
+                    && !repository_linked(workspace)
                     && Path::new(&workspace.cwd)
                         .parent()
                         .is_some_and(|parent| trim_group_path(&parent.to_string_lossy()) == root)
@@ -219,13 +230,36 @@ pub(crate) fn workspace_entries(workspaces: &[Workspace]) -> Vec<(usize, bool)> 
 }
 
 /// Visible rows as `(index, child, group)`: `group` names the repository a
-/// parent row folds, on every parent of a group.
+/// parent row folds, on every parent of a group. A folder hub's child keeps
+/// its own repository group, and the group's linked worktrees follow it under
+/// the hub, hidden when the hub or their repository is folded.
 pub(super) fn visible_workspace_entries(
     workspaces: &[Workspace],
     collapsed: &HashSet<String>,
     workspace_groups: &[String],
 ) -> Vec<(usize, bool, Option<String>)> {
     let grouped = grouped_keys(workspaces);
+    // The repository key a parent workspace folds, when it heads a group.
+    let folded_group = |index: usize| {
+        workspaces[index]
+            .worktree
+            .as_ref()
+            .filter(|tree| !tree.linked && grouped.contains(tree.key.as_str()))
+            .map(|tree| tree.key.clone())
+    };
+    // Each parent's linked worktrees, in the order `workspace_entries` lays
+    // them out, so a parent claimed by a folder keeps them under its row.
+    let mut linked = HashMap::<usize, Vec<usize>>::new();
+    let mut parent = None;
+    for (index, child) in workspace_entries(workspaces) {
+        if child {
+            if let Some(parent) = parent {
+                linked.entry(parent).or_default().push(index);
+            }
+        } else {
+            parent = Some(index);
+        }
+    }
     let folders = folder_groups(workspaces, workspace_groups);
     let folder_head = folders
         .iter()
@@ -244,15 +278,64 @@ pub(super) fn visible_workspace_entries(
         })
         .collect::<HashMap<_, _>>();
     let mut entries = Vec::new();
+    // Rows placed while walking a hub, so `workspace_entries`' own pass over
+    // the same indexes does not repeat them.
+    let mut placed = HashSet::new();
+    let place_linked = |linked: &HashMap<usize, Vec<usize>>,
+                        placed: &mut HashSet<usize>,
+                        parent: usize,
+                        entries: &mut Vec<(usize, bool, Option<String>)>| {
+        if let Some(children) = linked.get(&parent) {
+            for &child in children {
+                if placed.insert(child) {
+                    entries.push((child, true, None));
+                }
+            }
+        }
+    };
     for (index, child) in workspace_entries(workspaces) {
-        if folder_child.contains_key(&index) {
+        if placed.contains(&index) || folder_child.contains_key(&index) {
             continue;
         }
         if let Some(&group) = folder_head.get(&index) {
             let folder = &folders[group];
             entries.push((folder.head, false, Some(folder.key.clone())));
-            if !collapsed.contains(&folder.key) {
-                entries.extend(folder.children.iter().map(|&child| (child, true, None)));
+            // A folded hub hides its children, and the linked worktrees those
+            // children keep, wherever in the daemon's order they sit.
+            let hide_under = |linked: &HashMap<usize, Vec<usize>>,
+                              placed: &mut HashSet<usize>,
+                              parent: usize| {
+                if let Some(children) = linked.get(&parent) {
+                    for &child in children {
+                        placed.insert(child);
+                    }
+                }
+            };
+            if collapsed.contains(&folder.key) {
+                hide_under(&linked, &mut placed, folder.head);
+                for &child in &folder.children {
+                    hide_under(&linked, &mut placed, child);
+                }
+                continue;
+            }
+            // The hub itself may parent a repository group.
+            let head_group = folded_group(folder.head);
+            match head_group {
+                Some(key) if collapsed.contains(&key) => {
+                    hide_under(&linked, &mut placed, folder.head)
+                }
+                Some(_) => place_linked(&linked, &mut placed, folder.head, &mut entries),
+                None => {}
+            }
+            for &child in &folder.children {
+                let key = folded_group(child);
+                entries.push((child, true, key.clone()));
+                match key {
+                    Some(key) if collapsed.contains(&key) => {
+                        hide_under(&linked, &mut placed, child)
+                    }
+                    _ => place_linked(&linked, &mut placed, child, &mut entries),
+                }
             }
             continue;
         }
@@ -303,7 +386,6 @@ fn workspace_git_input(workspace: &Workspace) -> Option<crate::pull_request::Inp
 /// not looked up. Any workspace, Git checkout or not, carries its muted mark.
 pub(super) fn workspace_badge(
     workspace: &Workspace,
-    focused: bool,
     pr: Option<(&crate::pull_request::Cache, &crate::pull_request::View)>,
     git: (Option<&crate::git::Git>, ChangeCounts),
     marks: (&crate::teleport::Marks, &str),
@@ -312,7 +394,16 @@ pub(super) fn workspace_badge(
 ) -> Option<RowBadge> {
     let input = workspace_git_input(workspace);
     let tracked = git.0.and_then(|git| git.tracked());
-    let tracks_this_workspace = focused || input.as_ref() == tracked;
+    // The live status belongs to the tracked checkout. A row reads it only
+    // when its own lookup key, or the folder it has instead of one, names
+    // that checkout: each session has its own focused row, so focus alone
+    // must never borrow another project's counts.
+    let tracks_this_workspace = tracked.is_some_and(|tracked| {
+        input.as_ref().map_or_else(
+            || tracked.checkout.as_deref() == Some(workspace.cwd.as_str()),
+            |input| input == tracked,
+        )
+    });
     let focused_counts = tracks_this_workspace
         .then(|| {
             if git.1 == ChangeCounts::Local {
@@ -418,7 +509,9 @@ pub(crate) fn workspace_label(workspace: &Workspace, indented: bool) -> &str {
         &workspace.label,
         workspace.branch.as_deref(),
         workspace.custom_label,
-        indented,
+        // Only a linked worktree's row names its branch: a plain project
+        // grouped under a folder hub keeps its own name, whatever its branch.
+        indented && crate::worktree_identity::is_linked(workspace),
     )
 }
 
@@ -441,11 +534,53 @@ pub(crate) fn label_of<'a>(
 }
 
 /// Collapsed groups show their most urgent member's status.
+/// The status each folded hub's head row shows, built once per render:
+/// `folder_groups` compares every workspace with every other, so rebuilding
+/// it per row would multiply that walk by the row count.
+pub(super) struct FolderStatuses {
+    heads: HashMap<String, AgentStatus>,
+}
+
+impl FolderStatuses {
+    pub(super) fn of(
+        workspaces: &[Workspace],
+        collapsed: &HashSet<String>,
+        workspace_groups: &[String],
+    ) -> Self {
+        // Only a folded hub has a status to carry; repository keys are bare
+        // paths, so no other collapse asks for this.
+        let building = collapsed.iter().any(|key| key.starts_with("folder:"));
+        let heads = if building {
+            folder_groups(workspaces, workspace_groups)
+                .into_iter()
+                .filter(|group| collapsed.contains(&group.key))
+                .map(|group| {
+                    let status = group
+                        .children
+                        .iter()
+                        .map(|&index| workspaces[index].status)
+                        .chain(std::iter::once(workspaces[group.head].status))
+                        .max_by_key(|status| status_priority(*status))
+                        .unwrap_or(workspaces[group.head].status);
+                    (workspaces[group.head].id.clone(), status)
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
+        Self { heads }
+    }
+
+    fn head_status(&self, workspace: &Workspace) -> Option<AgentStatus> {
+        self.heads.get(&workspace.id).copied()
+    }
+}
+
 pub(super) fn displayed_workspace_status(
     workspaces: &[Workspace],
     workspace: &Workspace,
     collapsed: &HashSet<String>,
-    workspace_groups: &[String],
+    folders: &FolderStatuses,
 ) -> AgentStatus {
     let worktree_status = workspace
         .worktree
@@ -465,24 +600,5 @@ pub(super) fn displayed_workspace_status(
                 .unwrap_or(workspace.status)
         })
         .unwrap_or(workspace.status);
-    folder_groups(workspaces, workspace_groups)
-        .into_iter()
-        .find(|group| {
-            group.head
-                == workspaces
-                    .iter()
-                    .position(|item| item.id == workspace.id)
-                    .unwrap_or(usize::MAX)
-        })
-        .filter(|group| collapsed.contains(&group.key))
-        .map(|group| {
-            group
-                .children
-                .into_iter()
-                .map(|index| workspaces[index].status)
-                .chain(std::iter::once(workspace.status))
-                .max_by_key(|status| status_priority(*status))
-                .unwrap_or(workspace.status)
-        })
-        .unwrap_or(worktree_status)
+    folders.head_status(workspace).unwrap_or(worktree_status)
 }

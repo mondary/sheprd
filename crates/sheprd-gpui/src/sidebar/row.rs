@@ -450,8 +450,17 @@ pub(super) fn row(
     let leading_icon = leading_status(lines);
     let show_status = !configured || leading_icon.is_some() || removing;
     let status_text = status_text.filter(|_| !configured);
+    // An agent with nothing to say below its name, such as one nested under
+    // the workspace that names its place, takes one line.
+    let show_detail = match kind {
+        RowKind::Agent(_) => !detail.is_empty(),
+        RowKind::Workspace if tree == RowTree::None => layout.workspace_details(),
+        RowKind::Workspace => layout.child_details(),
+    };
     let text_lines = if configured {
-        let badge_lines = badge.as_ref().map_or(0, |badge| badge.lines(&layout));
+        let badge_lines = badge
+            .as_ref()
+            .map_or(0, |badge| badge.lines(&layout, show_detail));
         lines.len().max(badge_lines)
     } else {
         0
@@ -462,13 +471,6 @@ pub(super) fn row(
     // Content starts below the highlight's edge, which sits half the row
     // spacing in from the row's own.
     let content_top = vertical_padding + look.spacing() / 2.;
-    // An agent with nothing to say below its name, such as one nested under
-    // the workspace that names its place, takes one line.
-    let show_detail = match kind {
-        RowKind::Agent(_) => !detail.is_empty(),
-        RowKind::Workspace if tree == RowTree::None => layout.workspace_details(),
-        RowKind::Workspace => layout.child_details(),
-    };
     let (name_color, weight, detail_color) = row_text(kind, focused, theme);
     let name_color = if teleported {
         left_behind(name_color, theme)
@@ -500,13 +502,15 @@ pub(super) fn row(
     // Narrow sidebars and large fonts can leave less room than a badge needs.
     // Clip its column within the row rather than painting over the terminal.
     let badge_width = badge.as_ref().map_or(0., |badge| {
-        badge.width(font, &layout).min((available - gap).max(0.))
+        badge
+            .width(font, &layout, show_detail)
+            .min((available - gap).max(0.))
     });
     // The label's first line yields only the badge's first line; the counts
     // under it take their room from the second line. A fold chevron is a
     // click target as tall as the row, so beside one the label still yields
     // the whole column.
-    let inline_counts = layout.inline_counts()
+    let inline_counts = !show_detail
         && badge
             .as_ref()
             .and_then(|badge| badge.shown_counts(&layout))
@@ -758,7 +762,7 @@ pub(super) fn row(
         // The collapse column comes first so the badge can hug the row's edge.
         .when_some(arrow, |row, arrow| row.child(arrow))
         .when_some(badge, |row, badge| {
-            let element = badge.element(key, badge_width, font, theme, &layout);
+            let element = badge.element(key, badge_width, font, theme, &layout, show_detail);
             if badge_first >= badge_width {
                 return row.child(element);
             }

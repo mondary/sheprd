@@ -173,12 +173,18 @@ fn child_labels_follow_upstream_custom_label_and_branch_rules() {
         .workspaces
         .remove(0);
     workspace.branch = Some("worktree/fix-sidebar".into());
+    workspace.worktree = worktree("/repo/.git", true);
     assert_eq!(workspace_label(&workspace, true), "fix-sidebar");
     assert_eq!(workspace_label(&workspace, false), "herdr");
     workspace.custom_label = true;
     assert_eq!(workspace_label(&workspace, true), "herdr");
     workspace.custom_label = false;
     workspace.branch = None;
+    assert_eq!(workspace_label(&workspace, true), "herdr");
+    // A plain project nested under a folder hub keeps its own name, however
+    // its branch reads.
+    workspace.worktree = None;
+    workspace.branch = Some("worktree/fix-sidebar".into());
     assert_eq!(workspace_label(&workspace, true), "herdr");
 }
 
@@ -220,14 +226,27 @@ fn configured_folder_groups_nest_direct_project_workspaces_and_collapse_them() {
     workspaces[0].status = AgentStatus::Idle;
     workspaces[1].status = AgentStatus::Blocked;
     workspaces[2].status = AgentStatus::Working;
+    let folders = super::super::workspaces::FolderStatuses::of(&workspaces, &collapsed, &roots);
     assert_eq!(
         super::super::workspaces::displayed_workspace_status(
             &workspaces,
             &workspaces[0],
             &collapsed,
-            &roots,
+            &folders,
         ),
         AgentStatus::Blocked
+    );
+    // Nothing folder-collapsed, so no hub status is computed at all.
+    let open =
+        super::super::workspaces::FolderStatuses::of(&workspaces, &Default::default(), &roots);
+    assert_eq!(
+        super::super::workspaces::displayed_workspace_status(
+            &workspaces,
+            &workspaces[0],
+            &Default::default(),
+            &open,
+        ),
+        AgentStatus::Idle
     );
 }
 
@@ -298,4 +317,69 @@ fn folders_with_git_children_and_named_prefixes_become_groups_automatically() {
         super::super::visible_workspace_entries(&workspaces, &Default::default(), &[])[0].2,
         Some("folder:/work/Chrome".into())
     );
+}
+
+/// A folder hub must not flatten a repository group it contains: the child
+/// keeps its fold, and its linked worktrees follow it under the hub, hidden
+/// when the hub or their repository is folded.
+#[test]
+fn a_hubs_repository_child_keeps_its_linked_worktrees_and_fold() {
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(5)).workspaces;
+    workspaces[0].cwd = "/hub".into();
+    workspaces[1].cwd = "/hub/repo-a".into();
+    workspaces[1].worktree = worktree("/hub/repo-a/.git", false);
+    workspaces[2].cwd = "/trees/feature".into();
+    workspaces[2].worktree = worktree("/hub/repo-a/.git", true);
+    workspaces[3].cwd = "/hub/repo-b".into();
+    workspaces[3].worktree = worktree("/hub/repo-b/.git", false);
+    workspaces[4].cwd = "/elsewhere".into();
+    workspaces[4].worktree = None;
+    let entries = super::super::visible_workspace_entries(&workspaces, &Default::default(), &[]);
+    assert_eq!(
+        entries,
+        vec![
+            (0, false, Some("folder:/hub".into())),
+            (1, true, Some("/hub/repo-a/.git".into())),
+            (2, true, None),
+            (3, true, None),
+            (4, false, None),
+        ]
+    );
+    // Folding repo-a hides its worktree alone; the hub keeps its children.
+    let collapsed = std::collections::HashSet::from(["/hub/repo-a/.git".into()]);
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &[]),
+        vec![
+            (0, false, Some("folder:/hub".into())),
+            (1, true, Some("/hub/repo-a/.git".into())),
+            (3, true, None),
+            (4, false, None),
+        ]
+    );
+    // Folding the hub hides the repository and its worktrees with it.
+    let collapsed = std::collections::HashSet::from(["folder:/hub".into()]);
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &[]),
+        vec![(0, false, Some("folder:/hub".into())), (4, false, None)]
+    );
+}
+
+/// Two plain projects under one folder keep their own names, whatever
+/// branch each is on: the branch-naming rule is for linked worktrees.
+#[test]
+fn folder_children_keep_their_project_names() {
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(4)).workspaces;
+    for workspace in &mut workspaces {
+        workspace.worktree = None;
+    }
+    workspaces[0].cwd = "/work/Chrome".into();
+    workspaces[0].label = "Chrome".into();
+    workspaces[1].cwd = "/work/Chrome/PKshortcuts".into();
+    workspaces[1].label = "PKshortcuts".into();
+    workspaces[1].branch = Some("main".into());
+    workspaces[2].cwd = "/work/Chrome/PKtraduction".into();
+    workspaces[2].label = "PKtraduction".into();
+    workspaces[2].branch = Some("main".into());
+    assert_eq!(workspace_label(&workspaces[1], true), "PKshortcuts");
+    assert_eq!(workspace_label(&workspaces[2], true), "PKtraduction");
 }

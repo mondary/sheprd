@@ -26,7 +26,6 @@ fn counts(
     let marks = crate::teleport::Marks::detached();
     workspace_badge(
         workspace,
-        false,
         Some((cache, &crate::pull_request::View::default())),
         (Some(git), mode),
         (&marks, crate::endpoint::LOCAL),
@@ -77,7 +76,6 @@ fn a_row_shows_only_the_change_counts_the_setting_picks() {
     let badge = |workspace, git| {
         workspace_badge(
             workspace,
-            false,
             None,
             (git, ChangeCounts::Local),
             (&marks, crate::endpoint::LOCAL),
@@ -106,7 +104,6 @@ fn pr_slot(
     let marks = crate::teleport::Marks::detached();
     workspace_badge(
         workspace,
-        false,
         Some((cache, &crate::pull_request::View::default())),
         (Some(git), ChangeCounts::PullRequest),
         (&marks, crate::endpoint::LOCAL),
@@ -141,14 +138,19 @@ fn commits_without_a_pull_request_take_the_number_slot_once_a_lookup_finished() 
 }
 
 #[test]
-fn the_focused_checkout_shows_counts_without_repository_metadata() {
+fn the_tracked_folder_shows_counts_without_branch_metadata() {
     let mut workspace = crate::session_model::of_snapshot(&layout_tests::snapshot(1))
         .workspaces
         .remove(0);
     workspace.branch = None;
     workspace.worktree = None;
+    workspace.cwd = "/projects/chrome-extension".into();
     let git = Git::fixture(
-        input("main"),
+        crate::pull_request::Input {
+            checkout: Some(workspace.cwd.clone()),
+            repo_key: None,
+            branch: "main".into(),
+        },
         Status {
             additions: 30,
             deletions: 51,
@@ -158,7 +160,6 @@ fn the_focused_checkout_shows_counts_without_repository_metadata() {
     let marks = crate::teleport::Marks::detached();
     let badge = workspace_badge(
         &workspace,
-        true,
         None,
         (Some(&git), ChangeCounts::Local),
         (&marks, crate::endpoint::LOCAL),
@@ -172,6 +173,40 @@ fn the_focused_checkout_shows_counts_without_repository_metadata() {
         ("+30", "-51")
     );
     assert!(badge.dirty);
+}
+
+/// Each session has its own focused row. A row whose own folder or lookup
+/// key does not name the tracked checkout must not borrow its counts.
+#[test]
+fn a_project_without_metadata_never_borrows_another_checkouts_counts() {
+    let mut workspace = crate::session_model::of_snapshot(&layout_tests::snapshot(1))
+        .workspaces
+        .remove(0);
+    workspace.branch = None;
+    workspace.worktree = None;
+    workspace.cwd = "/projects/herdr-one".into();
+    let git = Git::fixture(
+        crate::pull_request::Input {
+            checkout: Some("/projects/herdr-two".into()),
+            repo_key: None,
+            branch: "main".into(),
+        },
+        Status {
+            additions: 42,
+            deletions: 7,
+            untracked: 0,
+        },
+    );
+    let marks = crate::teleport::Marks::detached();
+    let badge = workspace_badge(
+        &workspace,
+        None,
+        (Some(&git), ChangeCounts::Local),
+        (&marks, crate::endpoint::LOCAL),
+        (None, false),
+        &Theme::default(),
+    );
+    assert!(badge.is_none());
 }
 
 #[test]
@@ -210,7 +245,6 @@ fn a_directory_opened_project_keeps_local_counts_when_another_project_is_focused
     let marks = crate::teleport::Marks::detached();
     let badge = workspace_badge(
         &workspace,
-        false,
         None,
         (Some(&git), ChangeCounts::Local),
         (&marks, crate::endpoint::LOCAL),

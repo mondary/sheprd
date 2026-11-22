@@ -34,8 +34,10 @@ impl RowBadge {
         self.pr.is_some() || self.counts.is_some() || self.dirty || self.teleported || self.noted
     }
 
-    pub(in crate::sidebar) fn lines(&self, layout: &SidebarMetrics) -> usize {
-        1 + usize::from(self.shown_counts(layout).is_some() && !layout.inline_counts())
+    /// How many lines the badge needs in a row that draws `details`, its
+    /// branch or agent line under the name.
+    pub(in crate::sidebar) fn lines(&self, layout: &SidebarMetrics, details: bool) -> usize {
+        1 + usize::from(self.shown_counts(layout).is_some() && details)
     }
 
     /// Nothing to draw is nothing to reserve, so a row with none keeps its
@@ -62,10 +64,16 @@ impl RowBadge {
 
     /// The whole column's width: its first line or the counts line under
     /// it, whichever is wider.
-    pub(in crate::sidebar) fn width(&self, font: &FontConfig, layout: &SidebarMetrics) -> f32 {
+    pub(in crate::sidebar) fn width(
+        &self,
+        font: &FontConfig,
+        layout: &SidebarMetrics,
+        details: bool,
+    ) -> f32 {
         let first = self.first_width(font, layout);
         let counts = self.counts_width(font, layout);
-        if layout.inline_counts() && counts > 0. {
+        // A one-line row keeps the counts beside the marks, in the same line.
+        if !details && counts > 0. {
             first + glyph_width(font) + counts
         } else {
             first.max(counts)
@@ -137,10 +145,11 @@ impl RowBadge {
         font: &FontConfig,
         theme: &Theme,
         layout: &SidebarMetrics,
+        details: bool,
     ) -> Div {
         let chipped = self.chipped(layout);
         let shown_counts = self.shown_counts(layout).is_some();
-        let inline_counts = layout.inline_counts() && shown_counts;
+        let inline_counts = !details && shown_counts;
         let Self {
             pr,
             counts,

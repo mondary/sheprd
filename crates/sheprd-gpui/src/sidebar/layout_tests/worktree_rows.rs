@@ -220,3 +220,56 @@ fn the_workspace_menu_folds_and_unfolds_a_worktree_group(cx: &mut gpui::TestAppC
         });
     }
 }
+
+/// A child row draws no detail line in the normal density. Its local counts
+/// take the same line as its name and mark, never an extra one that would
+/// spill into the next row.
+#[gpui::test]
+fn a_one_line_child_keeps_local_counts_on_its_line(cx: &mut gpui::TestAppContext) {
+    let (fixture, cx) = cx.add_window_view(|window, cx| {
+        let view = cx.new(|cx| fixture_window(window, cx));
+        cx.observe(&view, |_, _, cx| cx.notify()).detach();
+        SidebarFixture(view)
+    });
+    let view = cx.update(|_, cx| fixture.read(cx).0.clone());
+    cx.simulate_resize(size(px(800.), px(600.)));
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.config.layout.mode = crate::config::LayoutMode::new(
+                crate::config::Density::Normal,
+                crate::config::Style::Flat,
+            );
+            cx.notify();
+        });
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.config.sidebar_style.change_counts = crate::config::ChangeCounts::Local;
+            view.git.seed_counts(
+                crate::pull_request::Input {
+                    checkout: None,
+                    repo_key: Some(REPO_KEY.into()),
+                    branch: "worktree/sidebar-child".into(),
+                },
+                crate::git::Counted {
+                    lines: crate::git::Status {
+                        additions: 42,
+                        deletions: 7,
+                        untracked: 0,
+                    },
+                    dirty: true,
+                },
+                std::time::Instant::now(),
+            );
+            cx.notify();
+        });
+    });
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    let line = cx.debug_bounds("badge-line-sidebar-child").unwrap();
+    let counts = cx.debug_bounds("counts-sidebar-child").unwrap();
+    assert!(
+        counts.top() >= line.top() && counts.bottom() <= line.bottom(),
+        "counts {counts:?} must stay on the one line {line:?}"
+    );
+}
