@@ -454,3 +454,47 @@ fn a_folded_hubs_status_covers_its_childrens_worktrees() {
     // caller passes one, so name it once for the reader.
     let _mode = ChangeCounts::Local;
 }
+
+/// Projects Herdr opened as plain folders carry no worktree metadata, but a
+/// branch they report still says Git: two of them under one folder group,
+/// and their rows keep their project names.
+#[test]
+fn a_hubs_directory_projects_group_on_their_reported_branches() {
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(4)).workspaces;
+    for workspace in &mut workspaces {
+        workspace.worktree = None;
+    }
+    workspaces[0].cwd = "/hub".into();
+    workspaces[0].label = "hub".into();
+    workspaces[1].cwd = "/hub/one".into();
+    workspaces[1].label = "one".into();
+    workspaces[1].branch = Some("main".into());
+    workspaces[2].cwd = "/hub/two".into();
+    workspaces[2].label = "two".into();
+    workspaces[2].branch = Some("main".into());
+    workspaces[3].cwd = "/elsewhere".into();
+    let entries = super::super::visible_workspace_entries(&workspaces, &Default::default(), &[]);
+    assert_eq!(
+        entries,
+        vec![
+            (0, false, Some("folder:/hub".into())),
+            (1, true, None),
+            (2, true, None),
+            (3, false, None),
+        ]
+    );
+    // Plain projects keep their names as folder children.
+    assert_eq!(workspace_label(&workspaces[1], true), "one");
+    assert_eq!(workspace_label(&workspaces[2], true), "two");
+    // A child without any Git signal stays out of the count.
+    workspaces[2].branch = None;
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &Default::default(), &[]),
+        vec![
+            (0, false, None),
+            (1, false, None),
+            (2, false, None),
+            (3, false, None),
+        ]
+    );
+}

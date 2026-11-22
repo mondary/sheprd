@@ -101,11 +101,13 @@ fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup>
             })
             .collect();
         // Herdr attaches worktree metadata only once it made a worktree, so
-        // a repository opened as a plain folder has none to count here. The
-        // rule reads the daemon's metadata, never a scan of the user's disk.
+        // a repository opened as a plain folder has none. A branch it does
+        // report, daemon or kept alike, still names a Git checkout, so it
+        // counts: the rule reads what is already known, never the user's
+        // disk.
         let git_children = children
             .iter()
-            .filter(|workspace| workspace.worktree.is_some())
+            .filter(|workspace| known_git(workspace))
             .count();
         let prefix = Path::new(root)
             .file_name()
@@ -153,7 +155,7 @@ fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup>
                         .is_some_and(|parent| trim_group_path(&parent.to_string_lossy()) == root)
                     && match &rule {
                         FolderRule::All => true,
-                        FolderRule::Git => workspace.worktree.is_some(),
+                        FolderRule::Git => known_git(workspace),
                         FolderRule::Prefix(prefix) => Path::new(&workspace.cwd)
                             .file_name()
                             .and_then(|name| name.to_str())
@@ -176,6 +178,13 @@ fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup>
         });
     }
     groups
+}
+
+/// Whether the daemon or the app already knows the workspace is Git: worktree
+/// metadata when Herdr made one, else a branch it reports for a checkout it
+/// opened as a plain folder.
+fn known_git(workspace: &Workspace) -> bool {
+    workspace.worktree.is_some() || workspace.branch.is_some()
 }
 
 /// The repositories that form a group: those with at least one parent and at
