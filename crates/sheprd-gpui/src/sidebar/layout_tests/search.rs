@@ -83,3 +83,38 @@ fn escape_clears_a_query_without_matches(cx: &mut gpui::TestAppContext) {
     });
     assert!(cx.debug_bounds("spaces-scroll").is_some());
 }
+
+/// Search sees a project the sidebar keeps after its last tab closes, and
+/// Enter reopens its folder instead of navigating to an id no daemon knows.
+#[gpui::test]
+fn search_matches_a_retained_project_and_reopens_it(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let view = connected(window, cx);
+        let mut project = crate::session_model::of_snapshot(&snapshot(1))
+            .workspaces
+            .remove(0);
+        project.id = "closed-project".into();
+        project.label = "PKshortcuts".into();
+        project.cwd = "/work/Chrome/PKshortcuts".into();
+        project.branch = Some("main".into());
+        crate::browser::Store::update(cx, |store| {
+            let scope = crate::browser::scope(&view.endpoints[0]);
+            store.remember_closed_project(&scope, &project);
+        });
+        view
+    });
+    cx.simulate_resize(size(px(800.), px(700.)));
+    cx.run_until_parked();
+    cx.update(|window, cx| full_draw(window, cx).clear(cx));
+    type_query(&view, "PKshortcuts", cx);
+    assert!(cx.debug_bounds("sidebar-search-hit-0").is_some());
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        let view = view.read(cx);
+        assert!(view.pending_navigation.is_none());
+        // Opening the result clears the search, as for any other row.
+        assert!(view.sidebar_search.query().is_none());
+        full_draw(window, cx).clear(cx);
+    });
+}

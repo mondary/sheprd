@@ -8,7 +8,7 @@ use super::{
     workspaces::{workspace_entries, workspace_note},
 };
 use crate::{
-    NavigationTarget, SheprdWindow,
+    SheprdWindow,
     i18n::fl,
     search_input::{Changed, SearchInput},
 };
@@ -272,7 +272,9 @@ impl SheprdWindow {
             .displayed_devices()
             .into_iter()
             .filter(|(_, endpoint)| self.device_visible(&endpoint.id))
-            .map(|(index, endpoint)| (endpoint, self.sessions(index)))
+            // The sessions the sidebar draws, retained projects included:
+            // a search must not drop what the list keeps.
+            .map(|(index, endpoint)| (endpoint, self.sidebar_sessions(index, cx)))
             .collect();
         let devices: Vec<_> = listed
             .iter()
@@ -305,7 +307,9 @@ impl SheprdWindow {
                 endpoint,
                 workspace,
             } => {
-                self.navigate_endpoint(endpoint, NavigationTarget::Workspace(workspace), cx);
+                // A retained project's id names no daemon workspace, so the
+                // sidebar's own activation reopens its folder instead.
+                self.activate_sidebar_workspace(endpoint, workspace, window, cx);
             }
         }
         self.clear_heading_search(Heading::Spaces, window, cx);

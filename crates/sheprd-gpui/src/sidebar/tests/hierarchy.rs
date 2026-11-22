@@ -383,3 +383,74 @@ fn folder_children_keep_their_project_names() {
     assert_eq!(workspace_label(&workspaces[1], true), "PKshortcuts");
     assert_eq!(workspace_label(&workspaces[2], true), "PKtraduction");
 }
+
+/// A repository whose row sits before its hub in the daemon's order still
+/// keeps its linked worktrees under the hub, hidden when the hub folds:
+/// the daemon's order must not let them escape.
+#[test]
+fn a_hub_claims_its_childrens_worktrees_whatever_the_daemon_order() {
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(5)).workspaces;
+    // repo-a arrives before the hub workspace itself.
+    workspaces[0].cwd = "/hub/repo-a".into();
+    workspaces[0].worktree = worktree("/hub/repo-a/.git", false);
+    workspaces[1].cwd = "/trees/feature".into();
+    workspaces[1].worktree = worktree("/hub/repo-a/.git", true);
+    workspaces[2].cwd = "/hub".into();
+    workspaces[3].cwd = "/hub/repo-b".into();
+    workspaces[3].worktree = worktree("/hub/repo-b/.git", false);
+    workspaces[4].cwd = "/elsewhere".into();
+    workspaces[4].worktree = None;
+    let entries = super::super::visible_workspace_entries(&workspaces, &Default::default(), &[]);
+    assert_eq!(
+        entries,
+        vec![
+            (2, false, Some("folder:/hub".into())),
+            (0, true, Some("/hub/repo-a/.git".into())),
+            (1, true, None),
+            (3, true, None),
+            (4, false, None),
+        ]
+    );
+    // Folding the hub hides the repository and its worktrees with it.
+    let collapsed = std::collections::HashSet::from(["folder:/hub".into()]);
+    assert_eq!(
+        super::super::visible_workspace_entries(&workspaces, &collapsed, &[]),
+        vec![(2, false, Some("folder:/hub".into())), (4, false, None)]
+    );
+}
+
+/// A folded hub's head speaks for the blocked work its hidden linked
+/// worktrees carry, not only for its children's own statuses.
+#[test]
+fn a_folded_hubs_status_covers_its_childrens_worktrees() {
+    use crate::config::ChangeCounts;
+    let mut workspaces = crate::session_model::of_snapshot(&layout_tests::snapshot(5)).workspaces;
+    workspaces[0].cwd = "/hub".into();
+    workspaces[0].status = AgentStatus::Idle;
+    workspaces[1].cwd = "/hub/repo-a".into();
+    workspaces[1].worktree = worktree("/hub/repo-a/.git", false);
+    workspaces[1].status = AgentStatus::Idle;
+    workspaces[2].cwd = "/trees/feature".into();
+    workspaces[2].worktree = worktree("/hub/repo-a/.git", true);
+    workspaces[2].status = AgentStatus::Blocked;
+    // A second Git child, so the hub forms at all; its own work rests.
+    workspaces[3].cwd = "/hub/repo-b".into();
+    workspaces[3].worktree = worktree("/hub/repo-b/.git", false);
+    workspaces[3].status = AgentStatus::Idle;
+    workspaces[4].cwd = "/elsewhere".into();
+    workspaces[4].worktree = None;
+    let collapsed = std::collections::HashSet::from(["folder:/hub".into()]);
+    let folders = super::super::workspaces::FolderStatuses::of(&workspaces, &collapsed, &[]);
+    assert_eq!(
+        super::super::workspaces::displayed_workspace_status(
+            &workspaces,
+            &workspaces[0],
+            &collapsed,
+            &folders,
+        ),
+        AgentStatus::Blocked
+    );
+    // The setting only moves statuses; it plays no part here, but the badge
+    // caller passes one, so name it once for the reader.
+    let _mode = ChangeCounts::Local;
+}

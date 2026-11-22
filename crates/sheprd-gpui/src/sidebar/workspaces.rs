@@ -100,6 +100,9 @@ fn folder_groups(workspaces: &[Workspace], roots: &[String]) -> Vec<FolderGroup>
                         .is_some_and(|path| trim_group_path(&path.to_string_lossy()) == root)
             })
             .collect();
+        // Herdr attaches worktree metadata only once it made a worktree, so
+        // a repository opened as a plain folder has none to count here. The
+        // rule reads the daemon's metadata, never a scan of the user's disk.
         let git_children = children
             .iter()
             .filter(|workspace| workspace.worktree.is_some())
@@ -233,6 +236,24 @@ pub(crate) fn workspace_entries(workspaces: &[Workspace]) -> Vec<(usize, bool)> 
 /// parent row folds, on every parent of a group. A folder hub's child keeps
 /// its own repository group, and the group's linked worktrees follow it under
 /// the hub, hidden when the hub or their repository is folded.
+/// Each parent's linked worktrees, in the order `workspace_entries` lays them
+/// out: a parent's rows follow it, so a hub that claims the parent claims
+/// these with it.
+fn linked_by_parent(workspaces: &[Workspace]) -> HashMap<usize, Vec<usize>> {
+    let mut linked = HashMap::<usize, Vec<usize>>::new();
+    let mut parent = None;
+    for (index, child) in workspace_entries(workspaces) {
+        if child {
+            if let Some(parent) = parent {
+                linked.entry(parent).or_default().push(index);
+            }
+        } else {
+            parent = Some(index);
+        }
+    }
+    linked
+}
+
 pub(super) fn visible_workspace_entries(
     workspaces: &[Workspace],
     collapsed: &HashSet<String>,
@@ -249,17 +270,7 @@ pub(super) fn visible_workspace_entries(
     };
     // Each parent's linked worktrees, in the order `workspace_entries` lays
     // them out, so a parent claimed by a folder keeps them under its row.
-    let mut linked = HashMap::<usize, Vec<usize>>::new();
-    let mut parent = None;
-    for (index, child) in workspace_entries(workspaces) {
-        if child {
-            if let Some(parent) = parent {
-                linked.entry(parent).or_default().push(index);
-            }
-        } else {
-            parent = Some(index);
-        }
-    }
+    let linked = linked_by_parent(workspaces);
     let folders = folder_groups(workspaces, workspace_groups);
     let folder_head = folders
         .iter()
@@ -277,6 +288,17 @@ pub(super) fn visible_workspace_entries(
                 .map(move |child| (child, group))
         })
         .collect::<HashMap<_, _>>();
+    // Linked worktrees a hub owns: their parent is the hub's head or one of
+    // its children. The hub's row places them, so the daemon-order pass must
+    // skip them wherever in that order they sit, folded hub or not.
+    let mut hub_linked = HashSet::new();
+    for (&parent, children) in &linked {
+        if folder_head.contains_key(&parent) || folder_child.contains_key(&parent) {
+            for &child in children {
+                hub_linked.insert(child);
+            }
+        }
+    }
     let mut entries = Vec::new();
     // Rows placed while walking a hub, so `workspace_entries`' own pass over
     // the same indexes does not repeat them.
@@ -294,47 +316,27 @@ pub(super) fn visible_workspace_entries(
         }
     };
     for (index, child) in workspace_entries(workspaces) {
-        if placed.contains(&index) || folder_child.contains_key(&index) {
+        if placed.contains(&index)
+            || hub_linked.contains(&index)
+            || folder_child.contains_key(&index)
+        {
             continue;
         }
         if let Some(&group) = folder_head.get(&index) {
             let folder = &folders[group];
             entries.push((folder.head, false, Some(folder.key.clone())));
-            // A folded hub hides its children, and the linked worktrees those
-            // children keep, wherever in the daemon's order they sit.
-            let hide_under = |linked: &HashMap<usize, Vec<usize>>,
-                              placed: &mut HashSet<usize>,
-                              parent: usize| {
-                if let Some(children) = linked.get(&parent) {
-                    for &child in children {
-                        placed.insert(child);
-                    }
-                }
-            };
             if collapsed.contains(&folder.key) {
-                hide_under(&linked, &mut placed, folder.head);
-                for &child in &folder.children {
-                    hide_under(&linked, &mut placed, child);
-                }
                 continue;
             }
             // The hub itself may parent a repository group.
-            let head_group = folded_group(folder.head);
-            match head_group {
-                Some(key) if collapsed.contains(&key) => {
-                    hide_under(&linked, &mut placed, folder.head)
-                }
-                Some(_) => place_linked(&linked, &mut placed, folder.head, &mut entries),
-                None => {}
+            if folded_group(folder.head).is_some() {
+                place_linked(&linked, &mut placed, folder.head, &mut entries);
             }
             for &child in &folder.children {
                 let key = folded_group(child);
                 entries.push((child, true, key.clone()));
-                match key {
-                    Some(key) if collapsed.contains(&key) => {
-                        hide_under(&linked, &mut placed, child)
-                    }
-                    _ => place_linked(&linked, &mut placed, child, &mut entries),
+                if key.is_none_or(|key| !collapsed.contains(&key)) {
+                    place_linked(&linked, &mut placed, child, &mut entries);
                 }
             }
             continue;
@@ -551,15 +553,23 @@ impl FolderStatuses {
         // paths, so no other collapse asks for this.
         let building = collapsed.iter().any(|key| key.starts_with("folder:"));
         let heads = if building {
+            // A folded hub hides its children and the linked worktrees those
+            // children keep, so the hub's row speaks for all of their work.
+            let linked = linked_by_parent(workspaces);
             folder_groups(workspaces, workspace_groups)
                 .into_iter()
                 .filter(|group| collapsed.contains(&group.key))
                 .map(|group| {
-                    let status = group
-                        .children
-                        .iter()
-                        .map(|&index| workspaces[index].status)
-                        .chain(std::iter::once(workspaces[group.head].status))
+                    let mut statuses = vec![workspaces[group.head].status];
+                    statuses.extend(group.children.iter().map(|&index| workspaces[index].status));
+                    for parent in std::iter::once(group.head).chain(group.children.iter().copied())
+                    {
+                        if let Some(children) = linked.get(&parent) {
+                            statuses.extend(children.iter().map(|&index| workspaces[index].status));
+                        }
+                    }
+                    let status = statuses
+                        .into_iter()
                         .max_by_key(|status| status_priority(*status))
                         .unwrap_or(workspaces[group.head].status);
                     (workspaces[group.head].id.clone(), status)
