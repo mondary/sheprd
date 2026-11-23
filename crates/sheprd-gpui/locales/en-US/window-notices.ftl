@@ -67,3 +67,4 @@ window-notices-checkpoint-restored = Restored a checkpoint of { $branch }
 window-notices-checkpoint-not-restored = Checkpoint not restored: { $error }
 # $cause is what the failed Git commands or worker reported.
 window-notices-checkpoint-not-restored-cause = Checkpoint not restored: { $error }: { $cause }
+window-notices-no-moonframe = This build has no Moonframe window to switch to.

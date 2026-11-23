@@ -94,6 +94,8 @@ commands-swap-pane-down = Swap Pane Down
 commands-swap-pane-left = Swap Pane Left
 commands-swap-pane-right = Swap Pane Right
 commands-swap-pane-up = Swap Pane Up
+# Relaunches the app in the window kind it is not showing.
+commands-switch-window-mode = Switch between Moonframe and classic windows
 commands-themes = Themes
 commands-toggle-all-hosts = Collapse or Expand All Hosts
 commands-toggle-annotate = Toggle Annotate

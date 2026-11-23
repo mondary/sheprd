@@ -22,6 +22,7 @@ mod install;
 #[cfg(target_os = "linux")]
 mod linux;
 mod release;
+pub use release::{OfficialRelease, official_releases};
 #[cfg(not(unix))]
 mod unsupported;
 #[cfg(unix)]

@@ -615,6 +615,46 @@ pub(super) fn check(
     )
 }
 
+/// One published official release, read-only. A dev build carries no release
+/// identity, so the updater stays off; About still says where upstream is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OfficialRelease {
+    pub prerelease: bool,
+    pub tag: String,
+    /// GitHub's ISO timestamp, empty when the release has none.
+    pub published_at: String,
+}
+
+/// The newest official releases (pre-releases included), newest first.
+/// Blocking: run it on a worker thread, never on the UI thread.
+pub fn official_releases(cancel: &AtomicBool) -> Result<Vec<OfficialRelease>> {
+    #[derive(Deserialize)]
+    struct Raw {
+        tag_name: String,
+        #[serde(default)]
+        prerelease: bool,
+        #[serde(default)]
+        published_at: Option<String>,
+    }
+    let body = read_bounded(
+        request(RELEASES_URL, RequestProfile::Metadata, cancel)?
+            .into_body()
+            .into_reader(),
+        RELEASE_LIST_LIMIT,
+        cancel,
+    )?;
+    let raw: Vec<Raw> = serde_json::from_slice(&body).map_err(Error::ReleaseJson)?;
+    Ok(raw
+        .into_iter()
+        .filter(|release| !release.tag_name.trim().is_empty())
+        .map(|release| OfficialRelease {
+            tag: release.tag_name,
+            prerelease: release.prerelease,
+            published_at: release.published_at.unwrap_or_default(),
+        })
+        .collect())
+}
+
 /// Inject only transport, so offline fixtures exercise the complete production
 /// selection/authentication path rather than a second implementation of it.
 fn check_with(

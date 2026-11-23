@@ -605,6 +605,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<SheprdWindow>
     let terminal_focus = SheprdWindow::leave_region_with_terminal(&focus, window, cx);
     SheprdWindow {
         _terminal_focus: terminal_focus,
+        about_official: Default::default(),
         chrome_region: None,
         hosted: false,
         chat_rail_width: crate::panel_resize::CHAT_RAIL,

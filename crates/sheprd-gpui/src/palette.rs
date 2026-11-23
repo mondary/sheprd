@@ -770,6 +770,8 @@ impl SheprdWindow {
                         self.live.supports_edit_scrollback || palette.core_view.is_some()
                     }
                     Command::ToggleMenuBar => crate::menus::IN_WINDOW,
+                    // Only a build with the Moonframe window has a choice.
+                    Command::SwitchWindowMode => cfg!(feature = "moonframe"),
                     _ => true,
                 })
                 .map(|info| {

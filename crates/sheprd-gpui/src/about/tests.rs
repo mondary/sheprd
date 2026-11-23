@@ -109,3 +109,35 @@ fn the_in_app_menu_opens_the_about_box(cx: &mut TestAppContext) {
     cx.simulate_click(row.center(), Modifiers::default());
     view.read_with(cx, |view, _| assert_eq!(view.menu.page, Some(Page::About)));
 }
+
+#[gpui::test]
+fn a_dev_build_names_its_commit_and_the_official_release(cx: &mut TestAppContext) {
+    let (view, cx) = cx.add_window_view(crate::sidebar::layout_tests::fixture_window);
+    cx.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.about_official.seed(vec![OfficialRelease {
+                // i18n: data
+                tag: "20261118.1".into(),
+                prerelease: false,
+                // i18n: data
+                published_at: "2026-11-18T10:00:00Z".into(),
+            }]);
+            view.open_about(window, cx);
+        })
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    if crate::APP_VERSION == "dev" {
+        let identity = cx.debug_bounds("about-dev-identity").unwrap();
+        let official = cx.debug_bounds("about-official").unwrap();
+        let check = cx.debug_bounds("about-official-check").unwrap();
+        let version = cx.debug_bounds("about-version").unwrap();
+        let summary = cx.debug_bounds("about-summary").unwrap();
+        assert!(version.bottom() <= identity.top());
+        assert!(identity.bottom() <= official.top());
+        assert!(official.bottom() <= summary.top());
+        assert!(check.left() >= official.left());
+    } else {
+        // A release build carries its version; no dev block is drawn.
+        assert!(cx.debug_bounds("about-dev").is_none());
+    }
+}

@@ -718,6 +718,20 @@ impl SheprdWindow {
                 cx.quit();
                 return;
             }
+            Command::SwitchWindowMode => {
+                let current: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+                match super::mode::relaunch_args(&current, cfg!(feature = "moonframe")) {
+                    Some(args) => {
+                        super::mode::relaunch(&args);
+                        cx.quit();
+                    }
+                    None => {
+                        self.local_error = Some(fl!("window-notices-no-moonframe"));
+                        cx.notify();
+                    }
+                }
+                return;
+            }
             Command::RenameTab => {
                 self.rename_focused_tab(window, cx);
                 return;

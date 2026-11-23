@@ -145,6 +145,7 @@ impl SheprdWindow {
             _terminal_focus: terminal_focus,
             _window_closed: window_closed,
             _worktree_notes: worktree_notes,
+            about_official: Default::default(),
             activation_deadline: None,
             active: window.is_window_active(),
             activity: Default::default(),

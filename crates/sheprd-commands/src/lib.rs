@@ -92,6 +92,10 @@ pub enum Command {
     Detach,
     Reconnect,
     Quit,
+    /// Relaunch the app in its other window kind: the classic window from
+    /// Moonframe, Moonframe from the classic one. Only a build with the
+    /// `moonframe` feature has the choice.
+    SwitchWindowMode,
     Logs,
     About,
     OpenNotificationTarget,
@@ -818,6 +822,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::CloseWindow,
         name: "close_window",
         message: "commands-close-window",
+    },
+    CommandInfo {
+        command: Command::SwitchWindowMode,
+        name: "switch_window_mode",
+        message: "commands-switch-window-mode",
     },
 ];
 

@@ -141,6 +141,7 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (ToggleFullScreen, &["ctrl-cmd-f"]),
         (CycleWindows, &["cmd-`"]),
         (CloseWindow, &["cmd-alt-shift-w"]),
+        (SwitchWindowMode, &[]),
     ];
     assert_eq!(COMMANDS.len(), expected.len());
     let shortcuts: std::collections::HashSet<_> = COMMANDS
@@ -259,6 +260,7 @@ fn gui_commands_never_send_daemon_requests() {
         Command::ReviewChanges,
         Command::GitMenu,
         Command::ToggleAnnotate,
+        Command::SwitchWindowMode,
     ] {
         assert!(request(command, &s).is_none(), "{command:?}");
     }

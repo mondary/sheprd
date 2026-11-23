@@ -426,6 +426,7 @@ impl SheprdWindow {
                 | Command::ToggleFullScreen
                 | Command::CycleWindows
                 | Command::CloseWindow
+                | Command::SwitchWindowMode
                 | Command::ReloadConfig => 2,
                 Command::OpenNotificationTarget => 1,
             };

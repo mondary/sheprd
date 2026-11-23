@@ -38,6 +38,7 @@ mod lifecycle;
 pub(crate) mod main_window;
 pub(crate) use lifecycle::reasserts;
 mod links;
+mod mode;
 mod monitors;
 pub(crate) use links::PressedLink;
 mod mouse;
@@ -123,6 +124,9 @@ pub(crate) struct SheprdWindow {
     pub(crate) _window_closed: Subscription,
     /// Another window may edit a note this one shows.
     pub(crate) _worktree_notes: Subscription,
+    /// What About knows about the official releases, fetched read-only once
+    /// per run: a dev build has no release identity for the updater.
+    pub(crate) about_official: crate::about::OfficialCheck,
     pub(crate) activation_deadline: Option<std::time::Instant>,
     pub(crate) active: bool,
     /// The activity bar's panel and filter.
@@ -741,6 +745,9 @@ impl SheprdWindow {
             self.discard_composition(cx);
         }
         self.poll_github(window, cx);
+        if self.about_official.poll() {
+            cx.notify();
+        }
         if self.poll_gitlab_avatars() {
             cx.notify();
         }

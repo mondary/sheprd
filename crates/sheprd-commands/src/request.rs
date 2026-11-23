@@ -178,6 +178,7 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::Detach
         | Command::Reconnect
         | Command::Quit
+        | Command::SwitchWindowMode
         | Command::Logs
         | Command::About
         | Command::OpenNotificationTarget
