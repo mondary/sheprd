@@ -2,6 +2,12 @@
 
 Local fork versions; upstream release notes are generated separately.
 
+## [2026.11.06] - 2026-11-24
+
+### Changed
+
+- SheprdPK lives in one umbrella repository now: this fork is its `vendor/` submodule and the local profiles sit beside it as `patch/`.
+
 ## [2026.11.05] - 2026-11-24
 
 ### Added

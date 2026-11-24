@@ -4,7 +4,7 @@
 
 <h1 align="center">Sheprd</h1>
 
-**SheprdPK — version 2026.11.05** · [English](README_en.md) · [Changelog du fork](docs/pk/CHANGELOG.md)
+**SheprdPK — version 2026.11.06** · [English](README_en.md) · [Changelog du fork](docs/pk/CHANGELOG.md)
 
 La barre Moonframe reprend les quotas et les ressources de la vue classique. Le panneau Git permet de choisir un dépôt dans un dossier parent. Le bouton **Details** place le panneau à droite, le masque, puis le place à gauche entre les workspaces et les onglets. [Documentation Moonframe](docs/moonframe.md) · [Soutenir le fork sur Ko-fi](https://ko-fi.com/pouark).
 
