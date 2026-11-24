@@ -21,6 +21,10 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 | `components/sheprd-*.luau` | What the worktrees and agents share: a row highlighted as the layout marks the selected one, the status dot, and the section names |
 | `style.luau` | The hover looks, for every mod |
 
+Files and Git Changes share the Material Icon Theme mapping. When installed
+under `~/.config/sheprd/material/png`, the PNGs are cached in Moonframe's
+image directory. Files without an available Material icon use the default icon.
+
 The terminals, tabs, and pages stay one Rust view, placed with
 `ui.view { name = "sheprd", id = "main", props = { region = "main" } }`.
 

@@ -39,8 +39,6 @@ end
 
 -- Material Icon Theme's file icons, as the PNGs the material provider
 -- keeps in the image cache. `material_icon` names one for a path.
-local MATERIAL_DIR = "~/.cache/sheprd/images/material/"
-
 local MATERIAL_EXT = {
 	["adoc"] = "asciidoc.png",
 	["asm"] = "assembly.png",
@@ -206,7 +204,10 @@ local MATERIAL_FILES = {
 	["yarn.lock"] = "yarn.png",
 }
 
-local function material_icon(path: string): string?
+local function material_icon(path: string, material: any): string?
+	if not material then
+		return nil
+	end
 	local lower = string.lower(path)
 	local base = string.match(lower, "([^/]+)$") or lower
 	local icon = MATERIAL_FILES[base]
@@ -214,10 +215,7 @@ local function material_icon(path: string): string?
 		local ext = string.match(base, "%.([^.]+)$")
 		icon = ext and MATERIAL_EXT[ext] or nil
 	end
-	if not icon then
-		return nil
-	end
-	return MATERIAL_DIR .. icon
+	return if icon and material.icons[icon] then `{material.dir}/{icon}` else nil
 end
 
 -- The checkout's entry in `app.gitcounts`: by the repository key first, then
@@ -285,7 +283,7 @@ end
 return mod {
 	-- The focused worktree's repository (sheprd), what gitcounts reads for it
 	-- (its uncommitted lines, changed files and icon), and its commit graph.
-	subscribe = { "provider/sheprd", "provider/gitcounts", "provider/gitgraph", "provider/files" },
+	subscribe = { "provider/sheprd", "provider/gitcounts", "provider/gitgraph", "provider/files", "provider/material" },
 
 	styles = {
 		[".details-tab"] = { padding = { 5, 10 }, radius = 6, color = "muted-foreground" },
@@ -443,7 +441,7 @@ return mod {
 		-- path, and the lines it adds and removes. Clicking reviews them.
 		local change_rows = {}
 		for _, change in changes do
-			local icon = material_icon(change.path)
+			local icon = material_icon(change.path, app.material)
 			table.insert(change_rows, ui.row {
 				class = "details-change-row",
 				align = "center",
@@ -631,7 +629,10 @@ return mod {
 					icon = ui.icon { name = if at.open then "folder-open" else "folder", size = "small" }
 					lead = ui.icon { name = if at.open then "chevron-down" else "chevron-right", size = "small" }
 				else
-					icon = ui.icon { name = "file-text", size = "small" }
+					local image = material_icon(at.path, app.material)
+					icon = if image
+						then ui.image { src = image, fit = "contain", width = 16, height = 16 }
+						else ui.icon { name = "file-text", size = "small" }
 					lead = ui.row { width = 14 }
 				end
 				return ui.row {
