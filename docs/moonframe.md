@@ -21,9 +21,14 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 | `components/sheprd-*.luau` | What the worktrees and agents share: a row highlighted as the layout marks the selected one, the status dot, and the section names |
 | `style.luau` | The hover looks, for every mod |
 
-Files and Git Changes share the Material Icon Theme mapping. When installed
-under `~/.config/sheprd/material/png`, the PNGs are cached in Moonframe's
-image directory. Files without an available Material icon use the default icon.
+Files and Git Changes use the Material Icon Theme pack installed under
+`~/.config/sheprd/material`. Files also reads `material-icons.json` for
+named folders, the root and default folders, and their open/closed variants.
+Moonframe loads those images from its cache and uses built-in icons when
+the corresponding Material asset is missing.
+
+The status bar cup turns Sheprd's native keep-awake hold on or off. It
+shares its state with `sheprd caffeine` and respects `keep_awake_scope`.
 
 The terminals, tabs, and pages stay one Rust view, placed with
 `ui.view { name = "sheprd", id = "main", props = { region = "main" } }`.
@@ -89,6 +94,7 @@ It exercises the visibility controls and all three tabs without reading your pro
 | `workspaces` | The selected device's, folded or not, in the sidebar's order: `id`, `number`, `label`, `branch`, `repo`, `repo_key`, `linked`, `child` (shown under its checkout), `focused`, `agent_status`, `ahead`, `behind`, `added`, `removed`, `dirty`, `pr`, `pr_color` (the number's color for its state) |
 | `agents` | In Sheprd's sort: `name`, `kind` (`claude`, `codex`, ...), `status`, `state` (the status's word, when the agent's integration shows one), `title`, `pane`, `pane_name`, `workspace`, `workspace_label`, `tab`, `focused` |
 | `agent_sort` | `grouped` or `priority` |
+| `caffeine` | The native keep-awake state: `off`, `pending`, or `on` |
 | `layout` | The configured sidebar layout's `name` and spacing: `padding`, `gap`, `row_padding`, `style_padding`, `child_indent`, `inset`, `spacing`, `radius`, `outline` (rounded highlights), `tree_lines`, `title_case`, `workspace_details`, `child_details`, `pr_counts` |
 | `panels`, `panel` | The activity panels (`id`, `label`, `count`, `unseen`) and the current one's `id` |
 | `connected`, `status` | Whether the daemon answers, and what to say about it |
@@ -131,6 +137,7 @@ Send a message with `to = "provider:sheprd"`:
 | `{ fold_all = true }` | Folds the project groups and every repository's linked worktrees; `false` unfolds them |
 | `{ toggle_device = id }`, `{ select_device = id }` | Folds a device's header, or selects the device |
 | `{ toggle_agent_sort = true }` | Switches the agents between grouped and by priority |
+| `{ toggle_caffeine = true }` | Turns the native keep-awake hold on or off |
 | `{ move_workspace = id, target = id, after = bool }` | Moves a workspace of the selected device before (or after) another, as dropping its row there does; the worktrees mod sends it when a row with `carry` is dropped on one with `accept` |
 | `{ project_group = "create", name = name }` | Creates a named local project group |
 | `{ project_group = "fold", id = id }`, `{ project_group = "open", id = id }` | Folds a group or opens its own workspace |

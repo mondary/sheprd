@@ -201,6 +201,7 @@ fn action(message: &Data) -> Option<Action> {
         .or_else(|| text("select_device").map(Action::SelectDevice))
         .or_else(|| flag("fold_all").map(Action::FoldAll))
         .or_else(|| flag("toggle_agent_sort").map(|_| Action::ToggleAgentSort))
+        .or_else(|| flag("toggle_caffeine").filter(|toggle| *toggle).map(|_| Action::ToggleCaffeine))
         .or_else(|| flag("open_build_pr").map(|_| Action::OpenBuildPullRequest))
 }
 
@@ -320,6 +321,7 @@ struct SheprdRegion {
     /// Over the whole window, for the main region; see `render`.
     overlay: Option<AnyView>,
     _sizes: Option<Subscription>,
+    _caffeine: Option<Subscription>,
     view: AnyView,
 }
 
@@ -368,6 +370,12 @@ impl SheprdRegion {
                 report(sizes);
             })
         });
+        let caffeine = region.is_none().then(|| {
+            let wake = shared.borrow().wake.clone();
+            crate::caffeine::watch_cup(cx, move || {
+                let _ = wake.try_send(());
+            })
+        });
         let overlay = region.is_none().then(|| host.region(Region::Overlay, cx));
         if region.is_none() {
             let shared = shared.borrow();
@@ -384,6 +392,7 @@ impl SheprdRegion {
         Self {
             overlay,
             _sizes: sizes,
+            _caffeine: caffeine,
             view,
         }
     }
@@ -423,7 +432,7 @@ fn publish_state(
     cx.spawn_in(window, async move |_, cx| {
         let mut follow = theme::Follow::default();
         let mut last = Published::default();
-        let mut stamp: Option<(Stamp, u64)> = None;
+        let mut stamp: Option<(Stamp, u64, crate::caffeine::Cup)> = None;
         let mut refresh = Instant::now() + REFRESH;
         loop {
             let wait = refresh.saturating_duration_since(Instant::now());
@@ -443,7 +452,11 @@ fn publish_state(
             }
             let alive = cx.update(|_, cx| {
                 let groups = cx.try_global::<crate::sidebar::hosted::project_groups::Groups>();
-                let now = (host.stamp(cx), groups.map_or(0, |groups| groups.revision()));
+                let now = (
+                    host.stamp(cx),
+                    groups.map_or(0, |groups| groups.revision()),
+                    crate::caffeine::cup(cx),
+                );
                 if due || stamp.as_ref() != Some(&now) {
                     let state = host.state(cx);
                     follow.apply(&state.palette, cx);

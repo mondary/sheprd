@@ -191,25 +191,20 @@ local function version_chip(theme: any)
 	}
 end
 
--- The cup that keeps the machine awake, as Moonframe's `caffeine` component
--- does: it reads `app.awake` and sends `app:awake`. Icon-sized, so it fits
--- the bar's 24px line where the component's 26-32px button would not.
-local function caffeine_item(app: any, theme: any)
-	local awake = app.awake
-	local held = awake ~= nil and awake.held
-	local tooltip = if held then "Keeping the display awake" else "Keep the display awake"
-	if awake ~= nil and awake.problem ~= nil then
-		tooltip = awake.problem
+-- Share the native hold with Settings and `sheprd caffeine`.
+local function caffeine_item(state: string?, theme: any)
+	if state == nil then
+		return false
 	end
+	local held = state == "on"
+	local pending = state == "pending"
 	return ui.row {
 		class = "status-item",
 		align = "center",
 		shrink = false,
-		tooltip = tooltip,
-		msg = if held
-			then { hold = false }
-			else { hold = true, display = true, reason = "Sheprd" },
-		to = "app:awake",
+		tooltip = if pending then "Changing sleep prevention…" elseif held then "Decaffeinate" else "Caffeinate",
+		msg = if pending then nil else { toggle_caffeine = true },
+		to = if pending then nil else "provider:sheprd",
 		style = { gap = 5, padding = { x = 6 }, radius = 4 },
 		ui.icon { name = "coffee", size = "large", style = { color = if held then theme.accent else theme.subtext } },
 	}
@@ -247,7 +242,7 @@ return mod {
 			if sheprd.usage then usage(sheprd.usage, theme) else false,
 			ui.spacer(),
 			if app.sheprd_load then load_item(app.sheprd_load) else false,
-			caffeine_item(app, theme),
+			caffeine_item(sheprd.caffeine, theme),
 			if sheprd.details_visible == nil then item("panel-right", "Details", theme.subtext, "toggle-details", "shell") else false,
 			item("palette", "Theme", theme.subtext, run "themes", "provider:sheprd"),
 			item("keyboard", "Shortcuts", theme.subtext, run "keybindings", "provider:sheprd"),

@@ -329,6 +329,11 @@ impl SheprdWindow {
                     AgentSort::Grouped => "grouped",
                     AgentSort::Priority => "priority",
                 },
+                "caffeine": match crate::caffeine::cup(cx) {
+                    crate::caffeine::Cup::Off => "off",
+                    crate::caffeine::Cup::Pending => "pending",
+                    crate::caffeine::Cup::On(_) => "on",
+                },
                 "layout": layout_state(self.config.layout.mode.name(), &self.hosted_metrics()),
                 "connected": self.live.status.is_connected(),
                 "panel": panel_id(self.activity_panel()),

@@ -350,6 +350,11 @@ impl SheprdWindow {
         }
     }
 
+    pub(crate) fn toggle_caffeine(cx: &mut Context<Self>) {
+        let report = Self::caffeine_report(cx);
+        crate::caffeine::toggle(cx, report);
+    }
+
     /// Hidden by `keep_awake = false` only while off: the cup is the one
     /// way to let the display sleep again. A click holds until clicked again;
     /// a right-click holds until every agent finishes.
@@ -429,10 +434,7 @@ impl SheprdWindow {
                     fl!("status-bar-awake-system-off")
                 }
             }))
-            .on_click(cx.listener(|_, _, _, cx| {
-                let report = Self::caffeine_report(cx);
-                crate::caffeine::toggle(cx, report);
-            }))
+            .on_click(cx.listener(|_, _, _, cx| Self::toggle_caffeine(cx)))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|_, _, _, cx| {

@@ -98,6 +98,20 @@ pub(crate) fn cup(cx: &App) -> Cup {
         .map_or(Cup::Off, |caffeine| caffeine.cup)
 }
 
+/// Wake the hosted status bar only when the cup changes, not on every
+/// update to the agents the caffeine controller tracks.
+#[cfg(feature = "moonframe")]
+pub(crate) fn watch_cup(cx: &mut App, mut changed: impl FnMut() + 'static) -> gpui::Subscription {
+    let mut previous = cup(cx);
+    cx.observe_global::<Caffeine>(move |cx| {
+        let current = cup(cx);
+        if previous != current {
+            previous = current;
+            changed();
+        }
+    })
+}
+
 /// Chooses what the next hold keeps awake. Called when the config loads and
 /// reloads, so a click right after a Settings change uses the new scope.
 pub(crate) fn set_scope(scope: AwakeScope, cx: &mut App) {

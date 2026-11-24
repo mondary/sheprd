@@ -218,6 +218,22 @@ local function material_icon(path: string, material: any): string?
 	return if icon and material.icons[icon] then `{material.dir}/{icon}` else nil
 end
 
+-- A nil name draws the project root; other names use the theme's aliases.
+local function material_folder_icon(name: string?, open: boolean, material: any): string?
+	local folders = material and material.folders
+	if not folders then
+		return nil
+	end
+	local index = if open then 2 else 1
+	local pair = if name then folders.styles[folders.names[string.lower(name)]] else folders.root
+	local icon = (pair and pair[index]) or folders.default[index]
+	return if icon then `{material.dir}/{icon}` else nil
+end
+
+local function material_image(src: string?)
+	return if src then ui.image { src = src, fit = "contain", width = 16, height = 16 } else false
+end
+
 -- The checkout's entry in `app.gitcounts`: by the repository key first, then
 -- by its folder label, as the title bar's `git_pending` does. A linked
 -- worktree's key can differ from the key the provider published.
@@ -381,6 +397,7 @@ return mod {
 	view = function(state, app)
 		local sheprd = app.sheprd or { workspaces = {}, agents = {} }
 		local theme = app.sheprd_theme or {}
+		local material = app.material
 		local focused
 		for _, workspace in sheprd.workspaces do
 			if workspace.focused then
@@ -441,7 +458,7 @@ return mod {
 		-- path, and the lines it adds and removes. Clicking reviews them.
 		local change_rows = {}
 		for _, change in changes do
-			local icon = material_icon(change.path, app.material)
+			local icon = material_icon(change.path, material)
 			table.insert(change_rows, ui.row {
 				class = "details-change-row",
 				align = "center",
@@ -450,9 +467,7 @@ return mod {
 				msg = { command = "review_changes" },
 				to = "provider:sheprd",
 				tooltip = change.path,
-				if icon
-					then ui.image { src = icon, fit = "contain", width = 16, height = 16 }
-					else ui.icon { name = "file", size = "small", style = { color = theme.muted } },
+				material_image(icon) or ui.icon { name = "file", size = "small", style = { color = theme.muted } },
 				ui.text {
 					change.status,
 					size = "small",
@@ -624,15 +639,14 @@ return mod {
 				if at.entry.ignored then
 					table.insert(classes, "details-file-ignored")
 				end
-				local lead, icon
+				local lead, image, fallback
 				if at.entry.dir then
-					icon = ui.icon { name = if at.open then "folder-open" else "folder", size = "small" }
+					image = material_folder_icon(at.entry.name, at.open, material)
+					fallback = if at.open then "folder-open" else "folder"
 					lead = ui.icon { name = if at.open then "chevron-down" else "chevron-right", size = "small" }
 				else
-					local image = material_icon(at.path, app.material)
-					icon = if image
-						then ui.image { src = image, fit = "contain", width = 16, height = 16 }
-						else ui.icon { name = "file-text", size = "small" }
+					image = material_icon(at.path, material)
+					fallback = "file-text"
 					lead = ui.row { width = 14 }
 				end
 				return ui.row {
@@ -643,7 +657,7 @@ return mod {
 						else { open_file = at.path, root = files.path },
 					ui.row { width = INDENT * at.depth },
 					lead,
-					icon,
+					material_image(image) or ui.icon { name = fallback, size = "small" },
 					ui.text { at.entry.name, truncate = true },
 				}
 			end
@@ -655,6 +669,7 @@ return mod {
 					name = if state.files_collapsed then "chevron-right" else "chevron-down",
 					size = "small",
 				},
+				material_image(material_folder_icon(nil, not state.files_collapsed, material)),
 				ui.text { string.upper(files.root or "Files"), weight = "bold", size = "small" },
 			}
 			if state.files_collapsed then

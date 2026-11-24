@@ -62,6 +62,8 @@ pub enum Action {
     SidebarWidth { phase: Drag, dx: f32 },
     /// Switches the agents list between grouped and by priority.
     ToggleAgentSort,
+    /// Toggles the app's keep-awake hold, as the classic status cup does.
+    ToggleCaffeine,
     /// Folds or unfolds a device's header.
     ToggleDevice(String),
     /// Folds or unfolds a repository's linked worktrees.
@@ -203,6 +205,7 @@ impl SheprdWindow {
                 self.save_chrome();
                 cx.notify();
             }
+            Action::ToggleCaffeine => Self::toggle_caffeine(cx),
             Action::ToggleDevice(id) => self.toggle_device(&id, cx),
             Action::ToggleRepository { endpoint, key } => {
                 if let Some(endpoint) = self.hosted_endpoint(endpoint) {
