@@ -3,6 +3,7 @@
 -- and its commits as a graph. Each block sits in a pane whose divider drags,
 -- and the project's icon closes the column.
 local commit_graph = use "commit-graph"
+local status_dot = use "sheprd-status-dot"
 
 -- Each level of the Files tree steps in, and each row is this tall.
 local INDENT = 12
@@ -430,6 +431,7 @@ return mod {
 					gap = "small",
 					msg = { focus_pane = agent.pane, endpoint = agent.endpoint },
 					to = "provider:sheprd",
+					status_dot { status = agent.status, theme = theme },
 					ui.text { agent.name or "agent", truncate = true },
 					ui.spacer(),
 					ui.badge { agent.status },

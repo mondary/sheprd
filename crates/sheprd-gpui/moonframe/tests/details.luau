@@ -66,6 +66,17 @@ return mod {
 			state = details.update(state, tab.msg) or state
 			page = details.view(state, app)
 			assert(text(page, pair[2]), "missing content on " .. pair[1])
+			if pair[1] == "Agents" then
+				local function spinning()
+					local row = assert(control(details.view(state, app), "agent in repo"))
+					return find(row, function(n) return n.type == "icon" and n.spin end) ~= nil
+				end
+				assert(spinning(), "a working agent has no moving indicator")
+				for _, status in { "blocked", "done", "idle", "unknown" } do
+					app.sheprd.agents[1].status = status
+					assert(not spinning(), status .. " agent still has a moving indicator")
+				end
+			end
 			assert(find(page, function(n) return n.type == "image" and n.src == icon end), "missing project icon")
 			table.insert(pages, page)
 		end

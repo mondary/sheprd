@@ -11,7 +11,9 @@ app="$root/crates/sheprd-gpui/moonframe/app"
 mkdir -p "$root/target"
 fixture=$(mktemp -d "$root/target/moonframe-details.XXXXXX")
 trap 'rm -rf "$fixture"' EXIT
-ln -s "$toolbox/components" "$fixture/components"
+mkdir "$fixture/components"
+ln -s "$toolbox"/components/* "$fixture/components/"
+ln -sf "$app/components/sheprd-status-dot.luau" "$fixture/components/sheprd-status-dot.luau"
 cp "$toolbox/style.luau" "$fixture/style.luau"
 module() {
     printf 'local %s = (function()\n' "$1"

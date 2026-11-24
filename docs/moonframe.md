@@ -25,6 +25,11 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 The terminals, tabs, and pages stay one Rust view, placed with
 `ui.view { name = "sheprd", id = "main", props = { region = "main" } }`.
 
+Worktree rows, collapsed tiles and both Agents lists share the Orca indicator.
+`working` is a rotating ring; `blocked`, `done`, `idle` and `unknown` are
+stationary. The marks use `app.sheprd_theme.status` and need no image files.
+The classic window's `status_icons` selector is not exposed to Moonframe.
+
 The edge light reads `agent_status` from the **focused** entry in
 `app.sheprd.workspaces`, just like its sidebar dot. No focus or an unknown
 status leaves the window clear. GPUI plays the thin WebP strips directly;

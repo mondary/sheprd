@@ -398,20 +398,21 @@ local function workspace_row(workspace: any, last: boolean, layout: any, theme: 
 end
 
 
--- A row when the sidebar is collapsed: its number on a tile, the label in the
--- tooltip.
+-- Keep both the project number and its agent's mark when the sidebar folds.
 local function compact_row(workspace: any, theme: any)
 	return ui.column {
 		class = "worktree-tile",
 		selected = workspace.focused,
 		align = "center",
 		justify = "center",
+		gap = "none",
 		height = 36,
 		shrink = false,
 		msg = focus(workspace),
 		context = menu(workspace),
 		to = LINK,
 		tooltip = workspace.label,
+		status_dot { status = workspace.agent_status, theme = theme },
 		ui.text {
 			`{workspace.number}`,
 			class = "worktree-number",
