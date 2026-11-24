@@ -4,16 +4,22 @@
 //! Rows come from each device's sessions, as the window's own sidebar reads
 //! them: Herdr 1's workspaces, then those the app keeps for herdr-core.
 
+#[cfg(feature = "moonframe")]
+use super::group_actions;
+#[cfg(feature = "moonframe")]
+use crate::sidebar::workspaces::{grouped_keys, visible_repository_entries};
 use super::{hex, load_state, status_name};
 use crate::{
     endpoint::Endpoint,
     session_model::Sessions,
     sidebar::workspaces::{
-        FolderStatuses, displayed_workspace_status, visible_workspace_entries, workspace_badge,
-        workspace_entries, workspace_label, workspace_note,
+        FolderStatuses, displayed_workspace_status, workspace_badge, workspace_entries,
+        workspace_label, workspace_note,
     },
     window::SheprdWindow,
 };
+#[cfg(not(feature = "moonframe"))]
+use crate::sidebar::workspaces::visible_workspace_entries;
 use gpui::App;
 use serde_json::{Value, json};
 use sheprd_session::{Keeper, Session, Workspace};
@@ -28,6 +34,8 @@ struct Place<'a> {
     index: usize,
     endpoint: &'a Endpoint,
     group: Option<String>,
+    #[cfg(feature = "moonframe")]
+    project_root: Option<&'a str>,
     collapsed: &'a HashSet<String>,
     muted: bool,
     focused: bool,
@@ -110,7 +118,7 @@ impl SheprdWindow {
                 } else {
                     self.hosted_rows(index, endpoint, &sessions, cx)
                 };
-                json!({
+                let state = json!({
                     "collapsed": folded,
                     "connected": live.status.is_connected(),
                     "enabled": endpoint.enabled,
@@ -121,7 +129,10 @@ impl SheprdWindow {
                     "search": search_rows(endpoint, &sessions, cx),
                     "selected": selected,
                     "workspaces": rows,
-                })
+                });
+                #[cfg(feature = "moonframe")]
+                let state = self.with_project_groups(state, index, endpoint, &sessions, folded, cx);
+                state
             })
             .collect()
     }
@@ -140,13 +151,21 @@ impl SheprdWindow {
         let mut rows = Vec::new();
         for (keeper, session) in sessions.keyed() {
             let front = Sessions::front_of(keeper, session, kept_front);
+            #[cfg(feature = "moonframe")]
+            let mut project_root = None;
             for (row, child) in workspace_entries(&session.workspaces) {
                 let workspace = &session.workspaces[row];
+                #[cfg(feature = "moonframe")]
+                if !child {
+                    project_root = group_actions::project_key(workspace);
+                }
                 number += 1;
                 let place = Place {
                     index: self.selected_endpoint,
                     endpoint,
                     group: None,
+                    #[cfg(feature = "moonframe")]
+                    project_root,
                     collapsed: &none,
                     muted: silenced.contains(&workspace.id),
                     focused: front == Some(workspace.id.as_str()),
@@ -203,22 +222,38 @@ impl SheprdWindow {
             let front = selected
                 .then(|| Sessions::front_of(keeper, session, kept_front))
                 .flatten();
+            #[cfg(feature = "moonframe")]
+            let (folder_statuses, entries) = (
+                FolderStatuses::default(),
+                visible_repository_entries(&session.workspaces, collapsed),
+            );
+            #[cfg(not(feature = "moonframe"))]
             let folder_statuses = FolderStatuses::of(
                 &session.workspaces,
                 collapsed,
                 &self.config.sidebar_style.workspace_groups,
             );
-            for (row, child, group) in visible_workspace_entries(
+            #[cfg(not(feature = "moonframe"))]
+            let entries = visible_workspace_entries(
                 &session.workspaces,
                 collapsed,
                 &self.config.sidebar_style.workspace_groups,
-            ) {
+            );
+            #[cfg(feature = "moonframe")]
+            let mut project_root = None;
+            for (row, child, group) in entries {
                 let workspace = &session.workspaces[row];
+                #[cfg(feature = "moonframe")]
+                if !child {
+                    project_root = group_actions::project_key(workspace);
+                }
                 number += 1;
                 let place = Place {
                     index,
                     endpoint,
                     group,
+                    #[cfg(feature = "moonframe")]
+                    project_root,
                     collapsed,
                     muted: silenced.contains(&workspace.id),
                     focused: front == Some(workspace.id.as_str()),
@@ -266,7 +301,7 @@ impl SheprdWindow {
         let tree = workspace.worktree.as_ref();
         let counts = badge.as_ref().and_then(|badge| badge.counts.as_ref());
         let pr = badge.as_ref().and_then(|badge| badge.pr.as_ref());
-        json!({
+        let state = json!({
             "added": counts.map(|counts| counts.additions.clone()),
             "agent_status": status_name(place.status),
             "ahead": ahead,
@@ -295,8 +330,64 @@ impl SheprdWindow {
             "repo": tree.map(|tree| tree.label.clone()),
             "repo_key": tree.map(|tree| tree.key.clone()),
             "teleported": badge.as_ref().is_some_and(|badge| badge.teleported),
-        })
+        });
+        #[cfg(feature = "moonframe")]
+        let state = project_group_row(state, workspace, child, place, cx);
+        state
     }
+
+    #[cfg(feature = "moonframe")]
+    fn with_project_groups(
+        &self,
+        mut state: Value,
+        index: usize,
+        endpoint: &Endpoint,
+        sessions: &Sessions,
+        folded: bool,
+        cx: &App,
+    ) -> Value {
+        if let Some(groups) = group_actions::for_endpoint(endpoint, cx) {
+            state["project_groups"] = json!(groups.entries());
+        }
+        if folded {
+            let collapsed = if index == 0 {
+                &self.collapsed_repos
+            } else {
+                &endpoint.collapsed_repos
+            };
+            let mut has_worktrees = false;
+            let has_open_worktrees = sessions.each().any(|session| {
+                let keys = grouped_keys(&session.workspaces);
+                has_worktrees |= !keys.is_empty();
+                keys.into_iter().any(|key| !collapsed.contains(key))
+            });
+            state["has_worktrees"] = json!(has_worktrees);
+            state["has_open_worktrees"] = json!(has_open_worktrees);
+        }
+        state
+    }
+}
+
+#[cfg(feature = "moonframe")]
+fn project_group_row(
+    mut state: Value,
+    workspace: &Workspace,
+    child: bool,
+    place: &Place<'_>,
+    cx: &App,
+) -> Value {
+    let Some(groups) = group_actions::for_endpoint(place.endpoint, cx) else {
+        return state;
+    };
+    if let Some(id) = groups.workspace_group(std::path::Path::new(&workspace.cwd)) {
+        state["group_session"] = json!(id);
+    } else if let Some(key) = place.project_root {
+        if let Some(id) = groups.group_of(key) {
+            state["project_group"] = json!(id);
+        }
+        state["groupable"] = json!(!child);
+    }
+    state
 }
 
 /// Every workspace of a device, folded or not, with what the sidebar's search

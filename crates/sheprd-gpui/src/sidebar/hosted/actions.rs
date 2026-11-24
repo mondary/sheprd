@@ -12,13 +12,24 @@ use gpui::{Context, Window};
 pub enum Action {
     /// Runs a command by its name in the catalog, as a shortcut does.
     Command(String),
+    #[cfg(feature = "moonframe")]
+    CreateProjectGroup(String),
+    #[cfg(feature = "moonframe")]
+    ToggleProjectGroup(uuid::Uuid),
+    #[cfg(feature = "moonframe")]
+    OpenProjectGroup(uuid::Uuid),
+    #[cfg(feature = "moonframe")]
+    AssignProjectGroup {
+        workspace: String,
+        group: Option<uuid::Uuid>,
+    },
     /// Opens or closes the note on a workspace's checkout, at the pointer.
     EditNote {
         endpoint: Option<String>,
         workspace: String,
     },
-    /// Folds every repository's linked worktrees on every listed device, or
-    /// unfolds them all.
+    /// Folds every repository's linked worktrees and the sidebar's project
+    /// groups, or unfolds them all.
     FoldAll(bool),
     /// Focuses the pane with this id.
     FocusPane {
@@ -121,6 +132,16 @@ impl SheprdWindow {
                     let command: Command = info.command;
                     self.command(command, window, cx);
                 }
+            }
+            #[cfg(feature = "moonframe")]
+            Action::CreateProjectGroup(name) => self.create_project_group(&name, cx),
+            #[cfg(feature = "moonframe")]
+            Action::ToggleProjectGroup(id) => self.toggle_project_group(id, cx),
+            #[cfg(feature = "moonframe")]
+            Action::OpenProjectGroup(id) => self.open_project_group(id, window, cx),
+            #[cfg(feature = "moonframe")]
+            Action::AssignProjectGroup { workspace, group } => {
+                self.assign_project_group(&workspace, group, cx);
             }
             Action::EditNote {
                 endpoint,
@@ -327,6 +348,10 @@ impl SheprdWindow {
             } else {
                 collapsed.clear();
             }
+        }
+        #[cfg(feature = "moonframe")]
+        if cx.try_global::<super::project_groups::Groups>().is_some() {
+            cx.global_mut::<super::project_groups::Groups>().fold_all(fold);
         }
         cx.notify();
     }

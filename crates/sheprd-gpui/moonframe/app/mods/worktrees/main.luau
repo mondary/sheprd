@@ -89,9 +89,8 @@ end
 -- Sheprd's own), and where the dragged one would land.
 local drag = { device = nil, drop = nil }
 
--- The `gitcounts` provider's latest counts, set by `view`; the rows read it
--- through `counts_for` so the view reruns when a checkout's lines change.
-local git = { counts = nil, workspaces = nil }
+-- The `gitcounts` provider's latest counts, set by `view`.
+local git = { counts = nil }
 
 -- 1234567 as "1,234,567": Sheprd's own numbers take separators.
 local function grouped(value: number): string
@@ -128,10 +127,12 @@ end
 
 -- What a row carries when dragged onto another: its workspace.
 local function carry(workspace: any)
-	if drag.device ~= workspace.endpoint then
+	local reorder = drag.device == workspace.endpoint
+	local groupable = workspace.groupable and not workspace.child
+	if workspace.group_session or not (reorder or groupable) then
 		return nil
 	end
-	return { workspace = workspace.id }
+	return { workspace = workspace.id, reorder = reorder, groupable = groupable }
 end
 
 -- What a row tells this mod as a dragged row moves over it and is dropped.
@@ -585,103 +586,135 @@ local function device_header(device: any, layout: any, theme: any)
 	}
 end
 
--- The folder a workspace belongs to: its checkout's parent directory, which
--- is how the projects are kept on disk (Macos, Chrome, Web, WP, ...). A
--- workspace without a checkout path stays in "Other".
-local function group_name(workspace: any): string
-	-- The provider's id -> checkout map is exact; repo_key is often a
-	-- repository key, not a path, and the label can be truncated.
-	local path = git.workspaces and git.workspaces[workspace.id]
-	if type(path) ~= "string" or path == "" then
-		path = workspace.repo_key
-	end
-	if type(path) ~= "string" or path == "" then
-		-- Most rows have no worktree key. The counts provider has every
-		-- checkout keyed by its path; find it by the row's folder name.
-		local all = git.counts
-		if type(all) == "table" and type(workspace.label) == "string" then
-			for key in all do
-				if type(key) == "string" and string.match(key, "([^/]+)$") == workspace.label then
-					path = key
-					break
-				end
-			end
-		end
-	end
-	if type(path) ~= "string" or path == "" then
-		return "Other"
-	end
-	if path == "/tmp" or path == "/private/tmp" then
-		return "Terminal"
-	end
-	path = string.match(path, "^(.*)/%.git$") or path
-	local parent = string.match(path, "^(.*)/[^/]+$")
-	if not parent then
-		return "Other"
-	end
-	return string.match(parent, "([^/]+)$") or "Other"
-end
-
--- A group's header: its fold arrow, folder, name and how many projects it
--- holds. A click folds it; the folded groups are kept in the mod's state.
-local function group_row(name: string, count: number, folded: boolean, layout: any, theme: any)
+-- A project's group is sidebar metadata, independent of its checkout path.
+-- A group shell replaces the heading's idle appearance, not its fold control.
+local function group_row(group: any, session: any, layout: any, theme: any)
+	local target = if group then group.id else true
+	local over = drag.drop and drag.drop.group == target
+	local focused = session and session.focused
 	return ui.row {
 		class = "worktree-group",
+		selected = focused,
 		align = "center",
 		shrink = false,
 		height = 26,
-		msg = { fold_group = name },
-		style = { gap = 6, padding = { left = (layout.padding or 8) + (layout.inset or 0), right = 8 } },
-		ui.icon {
-			name = if folded then "chevron-right" else "chevron-down",
-			size = "small",
-			style = { color = theme.muted },
+		accept = { group_drop = target },
+		style = {
+			gap = 6,
+			padding = { left = (layout.padding or 8) + (layout.inset or 0) + (layout.nest or 0), right = 8 },
+			background = if over then (if theme.accent then `{theme.accent}30` else "secondary")
+				elseif focused then theme.active else nil,
 		},
-		ui.icon {
-			name = if folded then "folder-closed" else "folder-open",
-			size = "small",
-			style = { color = theme.muted },
-		},
+		if group
+			then ui.row {
+				width = 16,
+				height = 26,
+				align = "center",
+				justify = "center",
+				shrink = false,
+				msg = { project_group = "fold", id = group.id },
+				to = LINK,
+				tooltip = if group.folded then "Show projects" else "Hide projects",
+				ui.icon { if group.folded then "chevron-right" else "chevron-down", size = "small", style = { color = theme.muted } },
+			}
+			else false,
 		ui.row {
 			grow = true,
+			height = 26,
+			align = "center",
+			style = { gap = 6 },
+			msg = if group then { project_group = "open", id = group.id } else nil,
+			context = if session then menu(session) else nil,
+			to = if group then LINK else nil,
+			tooltip = if group then "Open group workspace" else "Drop a project here to remove it from its group",
+			if session
+				then status_dot { status = session.agent_status, theme = theme, height = DOT }
+				elseif group
+				then ui.icon { if group.folded then "folder-closed" else "folder-open", size = "small", style = { color = theme.muted } }
+				else false,
 			ui.text {
-				name,
+				if group then group.name else "Ungrouped",
 				class = "worktree-group-name",
 				truncate = true,
 				size = "small",
-				weight = "medium",
-				style = { color = theme.subtext },
+				weight = if focused then "bold" else "medium",
+				style = { color = if focused then theme.foreground else theme.subtext },
 			},
 		},
-		ui.text { tostring(count), size = "small", style = { color = theme.muted } },
 	}
 end
 
--- The workspaces of one device by folder: the group names in first-seen
--- order, with their members.
-local function group_workspaces(list: any)
-	local groups, order = {}, {}
-	for _, workspace in list do
-		local name = group_name(workspace)
-		if groups[name] == nil then
-			groups[name] = {}
-			table.insert(order, name)
-		end
-		table.insert(groups[name], workspace)
+local function append_workspaces(rows: any, list: any, layout: any, theme: any)
+	for index, workspace in list do
+		local following = list[index + 1]
+		table.insert(rows, workspace_row(workspace, not (following and following.child), layout, theme))
 	end
-	return order, groups
 end
 
--- Whether any repository on any device has its worktrees folded away.
-local function any_folded(devices: any): boolean
+local function append_device(rows: any, device: any, layout: any, theme: any)
+	local groups = device.project_groups
+	local list = device.workspaces or {}
+	if not groups or #groups == 0 then
+		append_workspaces(rows, list, layout, theme)
+		return
+	end
+	local members, sessions, ungrouped = {}, {}, {}
+	for _, group in groups do
+		members[group.id] = {}
+	end
+	for _, workspace in list do
+		if workspace.group_session then
+			sessions[workspace.group_session] = workspace
+		else
+			table.insert(members[workspace.project_group] or ungrouped, workspace)
+		end
+	end
+	for _, group in groups do
+		table.insert(rows, group_row(group, sessions[group.id], layout, theme))
+		local projects = members[group.id]
+		if not group.folded and #projects > 0 then
+			local children = {}
+			append_workspaces(children, projects, layout, theme)
+			table.insert(rows, ui.row {
+				shrink = false,
+				gap = "none",
+				style = { padding = { left = 12 } },
+				ui.column {
+					grow = true,
+					gap = "none",
+					style = { border = "left", border_color = theme.active },
+					table.unpack(children),
+				},
+			})
+		end
+	end
+	table.insert(rows, group_row(nil, nil, layout, theme))
+	append_workspaces(rows, ungrouped, layout, theme)
+end
+
+local function fold_state(devices: any): (boolean, boolean)
+	local expandable = false
 	for _, device in devices do
+		if device.has_open_worktrees then
+			return true, true
+		end
+		expandable = expandable or device.has_worktrees == true
+		for _, group in device.project_groups or {} do
+			if not group.folded then
+				return true, true
+			end
+			expandable = true
+		end
 		for _, workspace in device.workspaces or {} do
-			if workspace.collapsed then
-				return true
+			if workspace.group then
+				if not workspace.collapsed then
+					return true, true
+				end
+				expandable = true
 			end
 		end
 	end
-	return false
+	return expandable, false
 end
 
 -- Search, as Sheprd's sidebar searches: a case-insensitive substring of
@@ -781,22 +814,24 @@ return mod {
 	},
 
 	init = function(previous)
-		local state = previous or { query = "", searching = false, selected = 1 }
-		state.folded_groups = state.folded_groups or {}
-		return state
+		return previous or { query = "", searching = false, selected = 1 }
 	end,
 
 	update = function(state, msg)
-		if type(msg) == "table" and msg.fold_groups then
-			state.folded_groups = state.folded_groups or {}
-			for _, name in msg.fold_groups do
-				state.folded_groups[name] = msg.collapsed == true
+		if msg == "new_group" then
+			state.searching = false
+			state.query = ""
+			state.new_group = ""
+		elseif msg == "cancel_group" then
+			state.new_group = nil
+		elseif type(msg) == "table" and msg.create_group and state.new_group ~= nil then
+			local name = string.match(msg.value or "", "^%s*(.-)%s*$") or ""
+			if name ~= "" then
+				state.new_group = nil
+				return state, { { to = LINK, msg = { project_group = "create", name = name } } }
 			end
-			return state
-		elseif type(msg) == "table" and msg.fold_group then
-			state.folded_groups = state.folded_groups or {}
-			state.folded_groups[msg.fold_group] = not state.folded_groups[msg.fold_group]
-			return state
+		elseif type(msg) == "table" and msg.group_draft and state.new_group ~= nil then
+			state.new_group = msg.value or ""
 		elseif type(msg) == "table" and msg.sheprd then
 			-- A row's click or right click, for Sheprd, and opening a hit
 			-- closes the search.
@@ -805,6 +840,24 @@ return mod {
 				state.query = ""
 			end
 			return state, { { to = LINK, msg = msg.sheprd } }
+		elseif type(msg) == "table" and msg.group_drop then
+			local target = msg.group_drop
+			local carried = msg.carry
+			if msg.phase == "leave" then
+				if state.drop and state.drop.group == target then
+					state.drop = nil
+				end
+			elseif carried and carried.groupable and carried.workspace then
+				if msg.phase == "drop" then
+					state.drop = nil
+					return state, { { to = LINK, msg = {
+						project_group = "move",
+						workspace = carried.workspace,
+						id = if target == true then nil else target,
+					} } }
+				end
+				state.drop = { group = target }
+			end
 		elseif type(msg) == "table" and msg.reorder then
 			-- A dragged row over, off, or dropped on the row `msg.reorder`.
 			local moving = msg.carry and msg.carry.workspace
@@ -812,7 +865,7 @@ return mod {
 				if state.drop and state.drop.target == msg.reorder then
 					state.drop = nil
 				end
-			elseif moving and moving ~= msg.reorder then
+			elseif moving and msg.carry.reorder and moving ~= msg.reorder then
 				local after = (msg.y or 0) > 0.5
 				if msg.phase == "drop" then
 					state.drop = nil
@@ -821,6 +874,7 @@ return mod {
 				state.drop = { target = msg.reorder, after = after }
 			end
 		elseif msg == "search" then
+			state.new_group = nil
 			state.searching = not state.searching
 			state.query = ""
 			state.selected = 1
@@ -854,11 +908,14 @@ return mod {
 		-- uncommitted lines change.
 		local gitcounts = app.gitcounts or {}
 		git.counts = if type(gitcounts.counts) == "table" then gitcounts.counts else nil
-		git.workspaces = if type(gitcounts.workspaces) == "table" then gitcounts.workspaces else nil
-		-- Only the selected device's rows move, while it is connected, as in
-		-- Sheprd's own sidebar.
+		-- Ordinary reordering remains scoped to the selected connected device.
+		-- Group moves use the native groupable flag instead.
 		drag.device = nil
+		local can_create_group = false
 		for _, device in devices do
+			if device.project_groups then
+				can_create_group = true
+			end
 			if device.selected and device.connected then
 				drag.device = device.id
 			end
@@ -871,7 +928,9 @@ return mod {
 			local tiles = {}
 			for _, device in devices do
 				for _, workspace in device.workspaces or {} do
-					table.insert(tiles, compact_row(workspace, theme))
+					if not device.collapsed then
+						table.insert(tiles, compact_row(workspace, theme))
+					end
 				end
 			end
 			return ui.column {
@@ -892,25 +951,7 @@ return mod {
 		end
 		local searching = state.searching and state.query ~= ""
 		local rows = {}
-		-- Every folder group, for the header's collapse-all button. Built
-		-- even while searching, so the button keeps working there.
-		local group_names, seen_groups = {}, {}
-		for _, device in devices do
-			local order = group_workspaces(device.workspaces or {})
-			for _, name in order do
-				if not seen_groups[name] then
-					seen_groups[name] = true
-					table.insert(group_names, name)
-				end
-			end
-		end
-		local groups_open = false
-		for _, name in group_names do
-			if not (state.folded_groups and state.folded_groups[name]) then
-				groups_open = true
-				break
-			end
-		end
+		local expandable, any_open = fold_state(devices)
 		if searching then
 			rows = results(devices, state.query, state.selected, layout, theme)
 		else
@@ -923,22 +964,11 @@ return mod {
 				if sheprd.multi then
 					table.insert(rows, device_header(device, layout, theme))
 				end
-				local list = device.workspaces or {}
-				local order, groups = group_workspaces(list)
-				for _, name in order do
-					local members = groups[name]
-					local folded = state.folded_groups and state.folded_groups[name]
-					table.insert(rows, group_row(name, #members, folded == true, layout, theme))
-					if not folded then
-						for index, workspace in members do
-							local following = members[index + 1]
-							table.insert(rows, workspace_row(workspace, not (following and following.child), nested, theme))
-						end
-					end
+				if not device.collapsed then
+					append_device(rows, device, nested, theme)
 				end
 			end
 		end
-		local folded = any_folded(devices)
 		local head = if state.searching
 			then ui.row {
 				class = "sheprd-search",
@@ -964,13 +994,6 @@ return mod {
 				side = ui.row {
 					align = "center",
 					style = { gap = 2 },
-					head_tool {
-						icon = if folded then "chevrons-up-down" else "list-tree",
-						tooltip = if folded then "Expand every group" else "Collapse every group",
-						msg = { fold_all = not folded },
-						to = LINK,
-					},
-
 					if (sheprd.merged or 0) > 0
 						then head_tool {
 							icon = "sparkles",
@@ -997,29 +1020,40 @@ return mod {
 				style = { padding = { left = 12, right = 8 } },
 				ui.text { "WORKSPACES", class = "sheprd-title", weight = "bold", size = "small", style = { color = theme.subtext } },
 				ui.spacer(),
+				if can_create_group
+					then head_tool { icon = "plus", tooltip = "New group", msg = "new_group" }
+					else false,
+				if expandable
+					then head_tool {
+						icon = if any_open then "chevron-up" else "chevron-down",
+						tooltip = if any_open then "Collapse all groups and worktrees" else "Expand all groups and worktrees",
+						msg = { fold_all = any_open },
+						to = LINK,
+					}
+					else false,
 				head_tool(TOGGLE),
 			},
+			if can_create_group and state.new_group ~= nil
+				then ui.row {
+					class = "sheprd-search",
+					align = "center",
+					shrink = false,
+					style = { padding = { x = (layout.padding or 8) + (layout.inset or 0), y = 4 } },
+					ui.input {
+						id = "sidebar-new-group",
+						class = "sheprd-search-input",
+						grow = true,
+						focus = true,
+						value = state.new_group,
+						placeholder = "Group name",
+						change = { group_draft = true },
+						submit = { create_group = true },
+						keys = { escape = "cancel_group" },
+					},
+					icon_button { icon = "circle-x", size = "small", tooltip = "Cancel new group", msg = "cancel_group" },
+				}
+				else false,
 			head,
-			ui.row {
-				height = 26,
-				shrink = false,
-				align = "center",
-				justify = "center",
-				gap = "small",
-				msg = { fold_groups = group_names, collapsed = groups_open },
-				tooltip = if groups_open then "Collapse every folder" else "Expand every folder",
-				style = { background = theme.active, radius = 6, margin = { left = 8, right = 8, top = 4, bottom = 4 } },
-				ui.icon {
-					name = if groups_open then "chevron-up" else "chevron-down",
-					size = "small",
-					style = { color = theme.muted },
-				},
-				ui.text {
-					if groups_open then "Collapse all folders" else "Expand all folders",
-					size = "small",
-					style = { color = theme.foreground },
-				},
-			},
 			ui.column {
 				grow = true,
 				scroll = true,

@@ -14,7 +14,7 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 | `main.luau` | The layout: where each part goes |
 | `mods/header/main.luau` | Back, Forward, and the sidebar toggle |
 | `mods/activity/main.luau` | The activity bar |
-| `mods/worktrees/main.luau` | The left pane's head and worktree rows, linked worktrees under their checkout, drawn in the sidebar layout Sheprd's config names (`layout = "orca"`, `compact`, `minimal`, ...) |
+| `mods/worktrees/main.luau` | The left pane's project groups, projects, and linked worktrees, drawn in Sheprd's configured sidebar layout (`layout = "orca"`, `compact`, `minimal`, ...) |
 | `mods/agents/main.luau` | The agents under the worktrees, in Sheprd's sort and the same layout |
 | `mods/details/main.luau` | Files, Git (changes above history), and Agents. Open the right pane from the title bar, or from Details in the status bar on hosts without a title-bar toggle. |
 | `mods/status/main.luau` | The status bar |
@@ -45,6 +45,21 @@ The controls save as you change them. The native renderer in
 corner and uses square corners in fullscreen. It needs no images or polling
 provider. Use a build of this checkout: copying Luau alone cannot add native
 Settings controls to a previously installed binary.
+
+## Project groups
+
+Use **+** beside **WORKSPACES** to name a group. Drag local projects to a
+group's header to add or move them, or to **Ungrouped** to remove them.
+Membership is independent of the folders on disk. Project workspaces keep
+their own tabs, agents and linked worktrees.
+
+A group's chevron folds its project tree. The single icon in the header
+folds or unfolds all groups and linked worktrees. Click a group name to
+open or return to its own workspace, with a terminal and the usual agent
+launcher. Agents starting there get `AGENTS.md` (also imported by
+`CLAUDE.md`) pointing to the current roster of local project roots in
+`project-groups/groups.json` in Sheprd's state directory. Moving a project
+updates the roster without replacing the group's workspace.
 
 ## Changing it
 
@@ -113,10 +128,13 @@ Send a message with `to = "provider:sheprd"`:
 | `{ menu = "device", endpoint = id }` | Opens a device's menu at the pointer |
 | `{ note = id }` | Edits the note on a workspace's checkout |
 | `{ toggle_repository = key }` | Folds or unfolds a repository's linked worktrees |
-| `{ fold_all = true }` | Folds every repository's worktrees on every device; `false` unfolds them |
+| `{ fold_all = true }` | Folds the project groups and every repository's linked worktrees; `false` unfolds them |
 | `{ toggle_device = id }`, `{ select_device = id }` | Folds a device's header, or selects the device |
 | `{ toggle_agent_sort = true }` | Switches the agents between grouped and by priority |
 | `{ move_workspace = id, target = id, after = bool }` | Moves a workspace of the selected device before (or after) another, as dropping its row there does; the worktrees mod sends it when a row with `carry` is dropped on one with `accept` |
+| `{ project_group = "create", name = name }` | Creates a named local project group |
+| `{ project_group = "fold", id = id }`, `{ project_group = "open", id = id }` | Folds a group or opens its own workspace |
+| `{ project_group = "move", workspace = id, id = group }` | Assigns a local project to a group; omit `id` to ungroup it |
 | `{ sidebar_width = true }` as a `pointer` | Resizes the sidebar from a drag of its edge (`phase`, `dx`); a double click puts back the default width. The shell draws the edge as a hairline lit on hover (`.sheprd-left-edge` in `style.luau`) |
 | `{ open_build_pr = true }` | Opens the pull request a worktree build came from |
 

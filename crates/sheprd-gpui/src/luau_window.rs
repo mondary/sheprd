@@ -187,6 +187,7 @@ fn action(message: &Data) -> Option<Action> {
                 key,
             })
         })
+        .or_else(|| project_group_action(message))
         .or_else(|| {
             let target = text("target")?;
             text("move_workspace").map(|workspace| Action::MoveWorkspace {
@@ -201,6 +202,21 @@ fn action(message: &Data) -> Option<Action> {
         .or_else(|| flag("fold_all").map(Action::FoldAll))
         .or_else(|| flag("toggle_agent_sort").map(|_| Action::ToggleAgentSort))
         .or_else(|| flag("open_build_pr").map(|_| Action::OpenBuildPullRequest))
+}
+
+fn project_group_action(message: &Data) -> Option<Action> {
+    let field = |key| message.get(key).and_then(Data::as_str);
+    let id = || uuid::Uuid::parse_str(field("id")?).ok();
+    match field("project_group")? {
+        "create" => Some(Action::CreateProjectGroup(field("name")?.to_owned())),
+        "fold" => Some(Action::ToggleProjectGroup(id()?)),
+        "open" => Some(Action::OpenProjectGroup(id()?)),
+        "move" => Some(Action::AssignProjectGroup {
+            workspace: field("workspace")?.to_owned(),
+            group: if message.get("id").is_some() { Some(id()?) } else { None },
+        }),
+        _ => None,
+    }
 }
 
 /// A drag of the sidebar's edge: `pointer = { sidebar_width = true }` sends
@@ -407,7 +423,7 @@ fn publish_state(
     cx.spawn_in(window, async move |_, cx| {
         let mut follow = theme::Follow::default();
         let mut last = Published::default();
-        let mut stamp: Option<Stamp> = None;
+        let mut stamp: Option<(Stamp, u64)> = None;
         let mut refresh = Instant::now() + REFRESH;
         loop {
             let wait = refresh.saturating_duration_since(Instant::now());
@@ -426,7 +442,8 @@ fn publish_state(
                 refresh = Instant::now() + REFRESH;
             }
             let alive = cx.update(|_, cx| {
-                let now = host.stamp(cx);
+                let groups = cx.try_global::<crate::sidebar::hosted::project_groups::Groups>();
+                let now = (host.stamp(cx), groups.map_or(0, |groups| groups.revision()));
                 if due || stamp.as_ref() != Some(&now) {
                     let state = host.state(cx);
                     follow.apply(&state.palette, cx);

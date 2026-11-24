@@ -268,6 +268,24 @@ pub(super) fn visible_workspace_entries(
     collapsed: &HashSet<String>,
     workspace_groups: &[String],
 ) -> Vec<(usize, bool, Option<String>)> {
+    let folders = folder_groups(workspaces, workspace_groups);
+    visible_entries(workspaces, collapsed, &folders)
+}
+
+/// Moonframe groups projects explicitly, independently of their directories.
+#[cfg(feature = "moonframe")]
+pub(super) fn visible_repository_entries(
+    workspaces: &[Workspace],
+    collapsed: &HashSet<String>,
+) -> Vec<(usize, bool, Option<String>)> {
+    visible_entries(workspaces, collapsed, &[])
+}
+
+fn visible_entries(
+    workspaces: &[Workspace],
+    collapsed: &HashSet<String>,
+    folders: &[FolderGroup],
+) -> Vec<(usize, bool, Option<String>)> {
     let grouped = grouped_keys(workspaces);
     // The repository key a parent workspace folds, when it heads a group.
     let folded_group = |index: usize| {
@@ -279,8 +297,11 @@ pub(super) fn visible_workspace_entries(
     };
     // Each parent's linked worktrees, in the order `workspace_entries` lays
     // them out, so a parent claimed by a folder keeps them under its row.
-    let linked = linked_by_parent(workspaces);
-    let folders = folder_groups(workspaces, workspace_groups);
+    let linked = if folders.is_empty() {
+        HashMap::new()
+    } else {
+        linked_by_parent(workspaces)
+    };
     let folder_head = folders
         .iter()
         .enumerate()
@@ -548,6 +569,7 @@ pub(crate) fn label_of<'a>(
 /// The status each folded hub's head row shows, built once per render:
 /// `folder_groups` compares every workspace with every other, so rebuilding
 /// it per row would multiply that walk by the row count.
+#[derive(Default)]
 pub(super) struct FolderStatuses {
     heads: HashMap<String, AgentStatus>,
 }

@@ -20,6 +20,20 @@ impl SheprdWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<()> {
+        let label = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        self.open_named_project_at(path, label, window, cx)
+    }
+
+    pub(crate) fn open_named_project_at(
+        &mut self,
+        path: PathBuf,
+        label: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
         self.open_palette(super::Filter::Projects, window, cx);
         let target = self
             .menu
@@ -35,10 +49,6 @@ impl SheprdWindow {
             self.dismiss_menu(window, cx);
             return Err(error);
         }
-        let label = path.file_name().map_or_else(
-            || path.display().to_string(),
-            |name| name.to_string_lossy().into_owned(),
-        );
         self.activate_project(projects::Project { path, label }, window, cx);
         Ok(())
     }

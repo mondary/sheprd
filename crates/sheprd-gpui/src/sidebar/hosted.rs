@@ -5,6 +5,10 @@
 
 mod actions;
 mod devices;
+#[cfg(feature = "moonframe")]
+mod group_actions;
+#[cfg(feature = "moonframe")]
+pub(crate) mod project_groups;
 
 pub use actions::{Action, Drag, Menu};
 

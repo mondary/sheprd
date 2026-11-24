@@ -3,6 +3,9 @@
 
 use gpui::App;
 
+#[cfg(feature = "moonframe")]
+use crate::sidebar::hosted::project_groups::Groups;
+
 /// Each store the main view reads. Fixtures and native tests start on the
 /// defaults, so they never read, overwrite, or ask about the user's data.
 pub(crate) struct Stores {
@@ -19,6 +22,8 @@ pub(crate) struct Stores {
     notification_mutes: crate::notification_mutes::Mutes,
     overview_marks: crate::overview::Marks,
     palette_frecency: crate::palette::Frecency,
+    #[cfg(feature = "moonframe")]
+    project_groups: Groups,
     review_viewed: crate::review::Viewed,
     taskbar: crate::taskbar::Taskbar,
     window_state: Option<crate::window_state::WindowState>,
@@ -61,6 +66,8 @@ impl Stores {
             notification_mutes,
             overview_marks: read(personal, crate::overview::Marks::load),
             palette_frecency: read(personal, crate::palette::Frecency::load),
+            #[cfg(feature = "moonframe")]
+            project_groups: read(personal, Groups::load),
             review_viewed: read(personal, crate::review::Viewed::load),
             // Whether the launcher is installed is read once here, never
             // while a window opens.
@@ -87,6 +94,8 @@ impl Stores {
         self.overview_marks.install(cx);
         self.notification_mutes.install(cx);
         self.palette_frecency.install(cx);
+        #[cfg(feature = "moonframe")]
+        self.project_groups.install(cx);
         self.dispatch_history.install(cx);
         self.worktree_landing.install(cx);
         self.chat_modes.install(cx);
