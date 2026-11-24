@@ -20,6 +20,29 @@ local TONES = { working = "warning", blocked = "danger", done = "success" }
 
 -- Which design draws the rows. Devices lists agents by machine, which this
 -- pane does not yet, so it draws Herdr's rows.
+-- A tool at the end of a head (fold, search, the sidebar toggle): a small button, as
+-- `icon_button`'s, with its icon a step larger, as large as Sheprd's own
+-- sidebar draws them, where a small button's icon would be smaller.
+local function head_tool(props: any)
+	return ui.row {
+		gap = "none",
+		ui.row {
+			class = "icon-button sheprd-head-tool",
+			width = 26,
+			height = 26,
+			align = "center",
+			justify = "center",
+			tooltip = props.tooltip,
+			msg = props.msg,
+			to = props.to,
+			ui.icon { name = props.icon, size = "large" },
+		},
+	}
+end
+
+-- Folds the sidebar to its rail, or opens it again from there.
+local TOGGLE = { icon = "panel-left", tooltip = "Toggle the sidebar", msg = { command = "toggle_sidebar" }, to = LINK }
+
 local function design(layout: any): string
 	local name = layout.name
 	if name == "superset" or name == "orca" or name == "minimal" then
@@ -66,9 +89,46 @@ end
 -- Sheprd's own), and where the dragged one would land.
 local drag = { device = nil, drop = nil }
 
+-- The `gitcounts` provider's latest counts, set by `view`; the rows read it
+-- through `counts_for` so the view reruns when a checkout's lines change.
+local git = { counts = nil, workspaces = nil }
+
+-- 1234567 as "1,234,567": Sheprd's own numbers take separators.
+local function grouped(value: number): string
+	local text = tostring(math.floor(value))
+	local out = string.reverse((string.gsub(string.reverse(text), "(%d%d%d)", "%1,")))
+	if string.sub(out, 1, 1) == "," then
+		out = string.sub(out, 2)
+	end
+	return out
+end
+
+-- The uncommitted lines of a workspace's checkout, from `app.gitcounts`.
+-- The provider keys a checkout by its path; `repo_key` drops a trailing
+-- `.git`, and a linked worktree falls back to its folder label.
+local function counts_for(workspace: any): any
+	local all = git.counts
+	if type(all) ~= "table" then
+		return nil
+	end
+	local root = if type(workspace.repo_key) == "string"
+		then string.match(workspace.repo_key, "^(.*)/%.git$") or workspace.repo_key
+		else nil
+	local found = if root then all[root] else nil
+	if found == nil and type(workspace.label) == "string" then
+		for key, value in all do
+			if type(key) == "string" and string.match(key, "([^/]+)$") == workspace.label then
+				found = value
+				break
+			end
+		end
+	end
+	return found
+end
+
 -- What a row carries when dragged onto another: its workspace.
 local function carry(workspace: any)
-	if drag.device ~= workspace.endpoint or workspace.retained then
+	if drag.device ~= workspace.endpoint then
 		return nil
 	end
 	return { workspace = workspace.id }
@@ -91,19 +151,68 @@ local function drop_at(workspace: any): string?
 	return nil
 end
 
--- Commits to push and to pull, as Sheprd's rows count them.
+-- Commits to push and to pull. A push is MonoCode's accent blue; a pull
+-- stays quiet, so the two do not read as one count. The arrows are icons
+-- rather than `↑`/`↓` glyphs, which the sidebar font can drop.
 local function drift(workspace: any, theme: any)
 	local parts = {}
 	if (workspace.ahead or 0) > 0 then
-		table.insert(parts, `↑{workspace.ahead}`)
+		table.insert(parts, ui.row {
+			align = "center",
+			shrink = false,
+			style = { gap = 2 },
+			ui.icon { name = "arrow-up", size = "small", style = { color = theme.accent or theme.info } },
+			ui.text { tostring(workspace.ahead), class = "worktree-ahead", style = { color = theme.accent or theme.info } },
+		})
 	end
 	if (workspace.behind or 0) > 0 then
-		table.insert(parts, `↓{workspace.behind}`)
+		table.insert(parts, ui.row {
+			align = "center",
+			shrink = false,
+			style = { gap = 2 },
+			ui.icon { name = "arrow-down", size = "small", style = { color = theme.subtext } },
+			ui.text { tostring(workspace.behind), class = "worktree-behind", style = { color = theme.subtext } },
+		})
 	end
 	if #parts == 0 then
 		return false
 	end
-	return ui.text { table.concat(parts, " "), class = "worktree-drift", tooltip = "Commits to push ↑ and to pull ↓", style = { color = theme.subtext } }
+	return ui.row {
+		class = "worktree-drift",
+		align = "center",
+		shrink = false,
+		tooltip = "Commits to push and to pull",
+		style = { gap = "small" },
+		table.unpack(parts),
+	}
+end
+
+-- The checkout's uncommitted lines: + in green, − in red, as MonoCode's
+-- session rows and title bar show them.
+local function diff_counts(found: any, theme: any)
+	if found == nil then
+		return false
+	end
+	local added = tonumber(found.added) or 0
+	local removed = tonumber(found.removed) or 0
+	if added == 0 and removed == 0 then
+		return false
+	end
+	local parts = {}
+	if added > 0 then
+		table.insert(parts, ui.text { `+{grouped(added)}`, class = "worktree-added", style = { color = theme.added or theme.success } })
+	end
+	if removed > 0 then
+		table.insert(parts, ui.text { `−{grouped(removed)}`, class = "worktree-removed", style = { color = theme.removed or theme.danger } })
+	end
+	return ui.row {
+		class = "worktree-diff",
+		align = "center",
+		shrink = false,
+		tooltip = "Uncommitted lines added + and removed −",
+		style = { gap = "small" },
+		table.unpack(parts),
+	}
 end
 
 -- The chevron that folds a repository's linked worktrees under its checkout.
@@ -142,6 +251,9 @@ end
 -- them.
 local function badges(workspace: any, counts: boolean, theme: any)
 	local dirty = theme.dirty or theme.warning
+	local found = counts_for(workspace)
+	local has_lines = found ~= nil
+		and ((tonumber(found.added) or 0) > 0 or (tonumber(found.removed) or 0) > 0)
 	return ui.column {
 		class = "worktree-badges",
 		align = "end",
@@ -152,7 +264,7 @@ local function badges(workspace: any, counts: boolean, theme: any)
 			style = { gap = 6 },
 			if workspace.muted then ui.icon { "bell-off", class = "worktree-muted", size = "small", tooltip = "Notifications muted", style = { color = theme.muted } } else false,
 			if workspace.teleported then ui.icon { "send", class = "worktree-teleported", size = "small", tooltip = "Uncommitted work teleported", style = { color = theme.accent } } else false,
-			if workspace.dirty
+			if workspace.dirty and not has_lines
 				then ui.row {
 					class = "worktree-dirty",
 					width = 14,
@@ -163,6 +275,7 @@ local function badges(workspace: any, counts: boolean, theme: any)
 					ui.icon { "pencil", size = "small", style = { color = theme.dirty_ink or dirty } },
 				}
 				else false,
+			diff_counts(found, theme),
 			drift(workspace, theme),
 			if workspace.pr then ui.text { workspace.pr, class = "worktree-pr", style = { color = workspace.pr_color or theme.muted } } else false,
 			fold(workspace, theme),
@@ -234,6 +347,7 @@ local function classic_row(workspace: any, last: boolean, layout: any, theme: an
 		theme = theme,
 		-- With guides, the indent is the guide's, inside the row.
 		indent = if child and not guided then layout.child_indent else 0,
+		nest = layout.nest,
 		msg = { sheprd = focus(workspace) },
 		context = { sheprd = menu(workspace) },
 		carry = carry(workspace),
@@ -280,6 +394,7 @@ local function superset_row(workspace: any, layout: any, theme: any)
 		layout = { padding = layout.padding, row_padding = 5 },
 		theme = theme,
 		indent = if workspace.child then layout.padding else 0,
+		nest = layout.nest,
 		msg = { sheprd = focus(workspace) },
 		context = { sheprd = menu(workspace) },
 		carry = carry(workspace),
@@ -312,7 +427,7 @@ end
 
 -- Orca's cards: a status column beside the name, and a quieter meta line
 -- with the branch and the pull request.
-local function orca_row(workspace: any, theme: any)
+local function orca_row(workspace: any, layout: any, theme: any)
 	local meta = {}
 	if branch(workspace) then
 		table.insert(meta, workspace.branch)
@@ -327,6 +442,7 @@ local function orca_row(workspace: any, theme: any)
 		layout = { padding = 8, row_padding = 5, spacing = 4 },
 		theme = theme,
 		indent = if workspace.child then 12 else 0,
+		nest = layout.nest,
 		msg = { sheprd = focus(workspace) },
 		context = { sheprd = menu(workspace) },
 		carry = carry(workspace),
@@ -357,6 +473,7 @@ local function minimal_row(workspace: any, layout: any, theme: any)
 		layout = layout,
 		theme = theme,
 		indent = if workspace.child then layout.child_indent else 0,
+		nest = layout.nest,
 		msg = { sheprd = focus(workspace) },
 		context = { sheprd = menu(workspace) },
 		carry = carry(workspace),
@@ -390,7 +507,7 @@ local function workspace_row(workspace: any, last: boolean, layout: any, theme: 
 	if kind == "superset" then
 		return with_note(superset_row(workspace, layout, theme), workspace, theme)
 	elseif kind == "orca" then
-		return with_note(orca_row(workspace, theme), workspace, theme)
+		return with_note(orca_row(workspace, layout, theme), workspace, theme)
 	elseif kind == "minimal" then
 		return with_note(minimal_row(workspace, layout, theme), workspace, theme)
 	end
@@ -466,6 +583,93 @@ local function device_header(device: any, layout: any, theme: any)
 			style = { radius = 4, background = if device.connected then theme.success else theme.muted },
 		},
 	}
+end
+
+-- The folder a workspace belongs to: its checkout's parent directory, which
+-- is how the projects are kept on disk (Macos, Chrome, Web, WP, ...). A
+-- workspace without a checkout path stays in "Other".
+local function group_name(workspace: any): string
+	-- The provider's id -> checkout map is exact; repo_key is often a
+	-- repository key, not a path, and the label can be truncated.
+	local path = git.workspaces and git.workspaces[workspace.id]
+	if type(path) ~= "string" or path == "" then
+		path = workspace.repo_key
+	end
+	if type(path) ~= "string" or path == "" then
+		-- Most rows have no worktree key. The counts provider has every
+		-- checkout keyed by its path; find it by the row's folder name.
+		local all = git.counts
+		if type(all) == "table" and type(workspace.label) == "string" then
+			for key in all do
+				if type(key) == "string" and string.match(key, "([^/]+)$") == workspace.label then
+					path = key
+					break
+				end
+			end
+		end
+	end
+	if type(path) ~= "string" or path == "" then
+		return "Other"
+	end
+	if path == "/tmp" or path == "/private/tmp" then
+		return "Terminal"
+	end
+	path = string.match(path, "^(.*)/%.git$") or path
+	local parent = string.match(path, "^(.*)/[^/]+$")
+	if not parent then
+		return "Other"
+	end
+	return string.match(parent, "([^/]+)$") or "Other"
+end
+
+-- A group's header: its fold arrow, folder, name and how many projects it
+-- holds. A click folds it; the folded groups are kept in the mod's state.
+local function group_row(name: string, count: number, folded: boolean, layout: any, theme: any)
+	return ui.row {
+		class = "worktree-group",
+		align = "center",
+		shrink = false,
+		height = 26,
+		msg = { fold_group = name },
+		style = { gap = 6, padding = { left = (layout.padding or 8) + (layout.inset or 0), right = 8 } },
+		ui.icon {
+			name = if folded then "chevron-right" else "chevron-down",
+			size = "small",
+			style = { color = theme.muted },
+		},
+		ui.icon {
+			name = if folded then "folder-closed" else "folder-open",
+			size = "small",
+			style = { color = theme.muted },
+		},
+		ui.row {
+			grow = true,
+			ui.text {
+				name,
+				class = "worktree-group-name",
+				truncate = true,
+				size = "small",
+				weight = "medium",
+				style = { color = theme.subtext },
+			},
+		},
+		ui.text { tostring(count), size = "small", style = { color = theme.muted } },
+	}
+end
+
+-- The workspaces of one device by folder: the group names in first-seen
+-- order, with their members.
+local function group_workspaces(list: any)
+	local groups, order = {}, {}
+	for _, workspace in list do
+		local name = group_name(workspace)
+		if groups[name] == nil then
+			groups[name] = {}
+			table.insert(order, name)
+		end
+		table.insert(groups[name], workspace)
+	end
+	return order, groups
 end
 
 -- Whether any repository on any device has its worktrees folded away.
@@ -570,22 +774,30 @@ local function results(devices: any, query: string, selected: number, layout: an
 	return children
 end
 
-local function link(text: string, command: string, theme: any)
-	return ui.row {
-		class = "sheprd-link",
-		msg = { command = command },
-		to = LINK,
-		ui.text { text, style = { color = theme.muted } },
-	}
-end
-
 return mod {
+	styles = {
+		[".worktree-group"] = { radius = 6 },
+		[".worktree-group:hover"] = { background = "secondary" },
+	},
+
 	init = function(previous)
-		return previous or { query = "", searching = false, selected = 1 }
+		local state = previous or { query = "", searching = false, selected = 1 }
+		state.folded_groups = state.folded_groups or {}
+		return state
 	end,
 
 	update = function(state, msg)
-		if type(msg) == "table" and msg.sheprd then
+		if type(msg) == "table" and msg.fold_groups then
+			state.folded_groups = state.folded_groups or {}
+			for _, name in msg.fold_groups do
+				state.folded_groups[name] = msg.collapsed == true
+			end
+			return state
+		elseif type(msg) == "table" and msg.fold_group then
+			state.folded_groups = state.folded_groups or {}
+			state.folded_groups[msg.fold_group] = not state.folded_groups[msg.fold_group]
+			return state
+		elseif type(msg) == "table" and msg.sheprd then
 			-- A row's click or right click, for Sheprd, and opening a hit
 			-- closes the search.
 			if msg.close_search then
@@ -638,6 +850,11 @@ return mod {
 		local devices = sheprd.devices or {}
 		local theme = app.sheprd_theme or {}
 		local layout = sheprd.layout or {}
+		-- Reading the provider here makes this mod rerun when a checkout's
+		-- uncommitted lines change.
+		local gitcounts = app.gitcounts or {}
+		git.counts = if type(gitcounts.counts) == "table" then gitcounts.counts else nil
+		git.workspaces = if type(gitcounts.workspaces) == "table" then gitcounts.workspaces else nil
 		-- Only the selected device's rows move, while it is connected, as in
 		-- Sheprd's own sidebar.
 		drag.device = nil
@@ -660,27 +877,64 @@ return mod {
 			return ui.column {
 				class = "sheprd-worktrees",
 				grow = true,
-				scroll = true,
-				padding = "small",
-				style = { background = theme.sidebar, gap = 4 },
-				table.unpack(tiles),
+				gap = "none",
+				style = { background = theme.sidebar },
+				-- The toggle that opens the sidebar again, where its head has it.
+				ui.row { class = "sheprd-head", align = "center", justify = "center", height = 32, shrink = false, head_tool(TOGGLE) },
+				ui.column {
+					grow = true,
+					scroll = true,
+					padding = "small",
+					style = { gap = 4 },
+					table.unpack(tiles),
+				},
 			}
 		end
 		local searching = state.searching and state.query ~= ""
 		local rows = {}
+		-- Every folder group, for the header's collapse-all button. Built
+		-- even while searching, so the button keeps working there.
+		local group_names, seen_groups = {}, {}
+		for _, device in devices do
+			local order = group_workspaces(device.workspaces or {})
+			for _, name in order do
+				if not seen_groups[name] then
+					seen_groups[name] = true
+					table.insert(group_names, name)
+				end
+			end
+		end
+		local groups_open = false
+		for _, name in group_names do
+			if not (state.folded_groups and state.folded_groups[name]) then
+				groups_open = true
+				break
+			end
+		end
 		if searching then
 			rows = results(devices, state.query, state.selected, layout, theme)
 		else
 			-- Each device under its header when several are listed, as
-			-- Sheprd's sidebar shows them; one device's rows stand alone.
+			-- Sheprd's sidebar shows them, its rows stepped in by the
+			-- layout's `nest`; one device's rows stand alone.
+			local nested = table.clone(layout)
+			nested.nest = if sheprd.multi then layout.nest or 0 else 0
 			for _, device in devices do
 				if sheprd.multi then
 					table.insert(rows, device_header(device, layout, theme))
 				end
 				local list = device.workspaces or {}
-				for index, workspace in list do
-					local following = list[index + 1]
-					table.insert(rows, workspace_row(workspace, not (following and following.child), layout, theme))
+				local order, groups = group_workspaces(list)
+				for _, name in order do
+					local members = groups[name]
+					local folded = state.folded_groups and state.folded_groups[name]
+					table.insert(rows, group_row(name, #members, folded == true, layout, theme))
+					if not folded then
+						for index, workspace in members do
+							local following = members[index + 1]
+							table.insert(rows, workspace_row(workspace, not (following and following.child), nested, theme))
+						end
+					end
 				end
 			end
 		end
@@ -710,22 +964,31 @@ return mod {
 				side = ui.row {
 					align = "center",
 					style = { gap = 2 },
-					icon_button {
+					head_tool {
 						icon = if folded then "chevrons-up-down" else "list-tree",
-						size = "small",
 						tooltip = if folded then "Expand every group" else "Collapse every group",
 						msg = { fold_all = not folded },
 						to = LINK,
 					},
-					icon_button { icon = "search", size = "small", tooltip = "Search devices, worktrees, branches and notes", msg = "search" },
+
+					if (sheprd.merged or 0) > 0
+						then head_tool {
+							icon = "sparkles",
+							tooltip = "Remove merged worktrees",
+							msg = { command = "remove_merged_worktrees" },
+							to = LINK,
+						}
+						else false,
+					head_tool { icon = "search", tooltip = "Search devices, worktrees, branches and notes", msg = "search" },
 				},
 			}
 		return ui.column {
 			class = "sheprd-worktrees",
 			grow = true,
 			gap = "none",
-			-- Sheprd's sidebar font: see src/theme.rs.
-			style = { background = theme.sidebar, font = "mono" },
+			-- Sheprd's sidebar font (src/luau_window/theme.rs) at the size
+			-- step nearest its own (`sidebar_size`, src/sidebar/hosted.rs).
+			style = { background = theme.sidebar, font = "mono", size = theme.sidebar_size },
 			ui.row {
 				class = "sheprd-head",
 				align = "center",
@@ -734,24 +997,36 @@ return mod {
 				style = { padding = { left = 12, right = 8 } },
 				ui.text { "WORKSPACES", class = "sheprd-title", weight = "bold", size = "small", style = { color = theme.subtext } },
 				ui.spacer(),
-				icon_button { icon = "panel-left", size = "small", tooltip = "Toggle the sidebar", msg = { command = "toggle_sidebar" }, to = LINK },
+				head_tool(TOGGLE),
 			},
 			head,
+			ui.row {
+				height = 26,
+				shrink = false,
+				align = "center",
+				justify = "center",
+				gap = "small",
+				msg = { fold_groups = group_names, collapsed = groups_open },
+				tooltip = if groups_open then "Collapse every folder" else "Expand every folder",
+				style = { background = theme.active, radius = 6, margin = { left = 8, right = 8, top = 4, bottom = 4 } },
+				ui.icon {
+					name = if groups_open then "chevron-up" else "chevron-down",
+					size = "small",
+					style = { color = theme.muted },
+				},
+				ui.text {
+					if groups_open then "Collapse all folders" else "Expand all folders",
+					size = "small",
+					style = { color = theme.foreground },
+				},
+			},
 			ui.column {
 				grow = true,
 				scroll = true,
 				gap = "none",
 				ui.column { shrink = false, gap = "none", table.unpack(rows) },
 			},
-			ui.row {
-				class = "sheprd-left-actions",
-				align = "center",
-				shrink = false,
-				style = { padding = { x = (layout.padding or 8) + (layout.inset or 0), y = 4 } },
-				link("new", "new_workspace", theme),
-				ui.spacer(),
-				link("menu", "command_palette", theme),
-			},
+			-- New and menu are the `actions` mod's, under the rule below.
 		}
 	end,
 }
