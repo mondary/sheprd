@@ -203,9 +203,17 @@ fn action(message: &Data) -> Option<Action> {
         .or_else(|| text("select_device").map(Action::SelectDevice))
         .or_else(|| flag("fold_all").map(Action::FoldAll))
         .or_else(|| flag("toggle_agent_sort").map(|_| Action::ToggleAgentSort))
-        .or_else(|| flag("toggle_caffeine").filter(|toggle| *toggle).map(|_| Action::ToggleCaffeine))
+        .or_else(|| {
+            flag("toggle_caffeine")
+                .filter(|toggle| *toggle)
+                .map(|_| Action::ToggleCaffeine)
+        })
         .or_else(|| flag("open_build_pr").map(|_| Action::OpenBuildPullRequest))
-        .or_else(|| flag("check_for_updates").filter(|check| *check).map(|_| Action::CheckForUpdates))
+        .or_else(|| {
+            flag("check_for_updates")
+                .filter(|check| *check)
+                .map(|_| Action::CheckForUpdates)
+        })
 }
 
 pub(crate) fn pk_version() -> &'static str {
@@ -226,7 +234,11 @@ fn project_group_action(message: &Data) -> Option<Action> {
         "open" => Some(Action::OpenProjectGroup(id()?)),
         "move" => Some(Action::AssignProjectGroup {
             workspace: field("workspace")?.to_owned(),
-            group: if message.get("id").is_some() { Some(id()?) } else { None },
+            group: if message.get("id").is_some() {
+                Some(id()?)
+            } else {
+                None
+            },
         }),
         _ => None,
     }

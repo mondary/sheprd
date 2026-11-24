@@ -16,7 +16,7 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 | `mods/activity/main.luau` | The activity bar |
 | `mods/worktrees/main.luau` | The left pane's project groups, projects, and linked worktrees, drawn in Sheprd's configured sidebar layout (`layout = "orca"`, `compact`, `minimal`, ...) |
 | `mods/agents/main.luau` | The agents under the worktrees, in Sheprd's sort and the same layout |
-| `mods/details/main.luau` | Files, Git (changes above history), and Agents. Open the right pane from the title bar, or from Details in the status bar on hosts without a title-bar toggle. |
+| `mods/details/main.luau` | Files, Git (changes above history), and Agents. Open the pane from the title bar, or from Details in the status bar on hosts without a title-bar toggle. Each click on Details moves it: right of the tabs, hidden, then left between the workspaces and the tabs; the last place is kept. |
 | `mods/status/main.luau` | The status bar |
 | `components/sheprd-*.luau` | What the worktrees and agents share: a row highlighted as the layout marks the selected one, the status dot, and the section names |
 | `style.luau` | The hover looks, for every mod |

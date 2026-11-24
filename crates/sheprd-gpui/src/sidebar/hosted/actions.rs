@@ -362,7 +362,8 @@ impl SheprdWindow {
         }
         #[cfg(feature = "moonframe")]
         if cx.try_global::<super::project_groups::Groups>().is_some() {
-            cx.global_mut::<super::project_groups::Groups>().fold_all(fold);
+            cx.global_mut::<super::project_groups::Groups>()
+                .fold_all(fold);
         }
         cx.notify();
     }

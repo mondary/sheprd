@@ -65,12 +65,61 @@ return mod {
 		status.update(bar, "move-version")
 		local _, check = status.update(bar, "choose-version")
 		assert(check[1].msg.check_for_updates == true and bar.choice == nil)
+		-- Exercise the real startup path after the native provider publishes.
+		app.sheprd.status_version = "2026.11.04"
+		local status_closed = status.view(bar, app)
 		status.update(bar, "toggle-version")
 		local status_menu = status.view(bar, app)
+		local pages = { status_closed, status_menu }
+
+		local main = function(n)
+			return n.type == "view" and n.name == "sheprd" and type(n.props) == "table" and n.props.region == "main"
+		end
+		local function details_side(tree)
+			local split = assert(find(tree, function(n)
+				return n.type == "hsplit" and (n.id == "body-left" or n.id == "body-right")
+			end), "missing the body split")
+			local column, tabs
+			for index, pane in ipairs(split) do
+				if find(pane, function(n) return n.type == "mount" and n.mod == "details" end) then column = index end
+				if find(pane, main) then tabs = index end
+			end
+			assert(tabs, "the terminals are missing")
+			if not column then return "hidden" end
+			return if column < tabs then "left" else "right"
+		end
+		local function details_icon()
+			local row = assert(control(status.view(bar, app), "Details"), "missing the Details button")
+			return assert(find(row, function(n) return n.type == "icon" end)).name
+		end
+		layout.details, layout.details_side = true, "right"
+		assert(details_side(shell.view(layout, app)) == "right")
+		local news = select(2, shell.update(layout, "toggle-details"))
+		assert(not layout.details and layout.details_side == "left", "a shown column hides first")
+		assert(news[1].to == "status" and news[1].msg.details_place == "left" and news[1].msg.details_shown == false)
+		assert(details_side(shell.view(layout, app)) == "hidden")
+		status.update(bar, news[1].msg)
+		assert(details_icon() == "panel-left-open", "a hidden column shows where a click opens it")
+		news = select(2, shell.update(layout, "toggle-details"))
+		assert(layout.details and news[1].msg.details_place == "left" and news[1].msg.details_shown == true)
+		table.insert(pages, shell.view(layout, app))
+		assert(details_side(pages[#pages]) == "left", "the column sits between the workspaces and the tabs")
+		status.update(bar, news[1].msg)
+		assert(details_icon() == "panel-left")
+		news = select(2, shell.update(layout, "toggle-details"))
+		assert(layout.details and news[1].msg.details_place == "right")
+		table.insert(pages, shell.view(layout, app))
+		assert(details_side(pages[#pages]) == "right")
+		status.update(bar, news[1].msg)
+		assert(details_icon() == "panel-right")
+		news = select(2, shell.update(layout, "details-state"))
+		assert(news[1].to == "status" and news[1].msg.details_place == "right")
+		layout.details = false
+		table.insert(pages, shell.view(layout, app))
+		assert(details_side(pages[#pages]) == "hidden" and details_icon() == "panel-right")
 
 		local state = details.init(nil)
 		local page = details.view(state, app)
-		local pages = { status_menu }
 		for _, pair in { { "Files", "entry.txt" }, { "Agents", "agent in repo" }, { "Git", "changed.txt" } } do
 			local tab = assert(control(page, pair[1]), "missing tab: " .. pair[1])
 			state = details.update(state, tab.msg) or state

@@ -429,7 +429,8 @@ pub(super) fn check_app_update(
         assert!(view.read(cx).menu.page == Some(crate::menu::Page::AppUpdate));
         assert_eq!(view.read(cx).live.snapshot, *before_install);
     });
-    assert!(cx.debug_bounds("app-update-action").is_none());
+    let read_only = cfg!(feature = "moonframe") && crate::APP_VERSION == "dev";
+    assert_eq!(cx.debug_bounds("app-update-action").is_some(), read_only);
     let releases = cx
         .debug_bounds("app-update-releases")
         .context("update releases bounds")?;

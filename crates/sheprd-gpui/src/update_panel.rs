@@ -214,6 +214,7 @@ pub(crate) fn download_caption(state: &State) -> Option<(String, Option<String>)
 
 #[derive(Clone, Copy)]
 enum UpdateAction {
+    CheckOfficial,
     Check,
     Download,
     Install,
@@ -256,22 +257,26 @@ impl SheprdWindow {
             version: "9999.0.0".into(),
             notes: crate::updater::PREVIEW_NOTES.into(),
         });
+        if self.read_only_update_check() {
+            self.about_official.start();
+        }
+    }
+
+    fn read_only_update_check(&self) -> bool {
+        cfg!(feature = "moonframe")
+            && self.update_preview.is_none()
+            && APP_VERSION == "dev"
+            && matches!(self.updater.state(), State::Disabled(_))
     }
 
     #[cfg(feature = "moonframe")]
     pub(crate) fn check_from_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.updater.state(), State::Disabled(_)) && APP_VERSION == "dev" {
-            // Dev builds check official releases through the read-only About panel.
-            self.open_about(window, cx);
-            if self.menu.page == Some(Page::About) {
-                self.about_official.start();
-                cx.notify();
-            }
-            return;
-        }
         self.open_app_update(false, window, cx);
         if self.menu.page == Some(Page::AppUpdate)
-            && matches!(self.updater.state(), State::Idle | State::Current | State::Error(_))
+            && matches!(
+                self.updater.state(),
+                State::Idle | State::Current | State::Error(_)
+            )
         {
             self.updater.check();
             cx.notify();
@@ -283,10 +288,18 @@ impl SheprdWindow {
         let theme = &self.theme;
         let accent = crate::menu::accent(theme);
         let state = self.update_preview.as_ref().unwrap_or(self.updater.state());
+        let read_only = self.read_only_update_check();
+        let installed_version = APP_VERSION;
+        #[cfg(feature = "moonframe")]
+        let installed_version = if read_only {
+            crate::luau_window::pk_version()
+        } else {
+            installed_version
+        };
         let (message, action) = match state {
             State::Disabled(reason) => (
                 fl!("update-panel-disabled", reason = reason.localize()),
-                None,
+                read_only.then_some(UpdateAction::CheckOfficial),
             ),
             State::Idle => (fl!("update-panel-idle"), Some(UpdateAction::Check)),
             State::Checking => (fl!("update-panel-checking"), Some(UpdateAction::Cancel)),
@@ -430,7 +443,7 @@ impl SheprdWindow {
                             [
                                 (
                                     fl!("update-panel-current-version"),
-                                    APP_VERSION.to_owned(),
+                                    installed_version.to_owned(),
                                     "app-update-current-version",
                                 ),
                                 (
@@ -440,6 +453,9 @@ impl SheprdWindow {
                                 ),
                             ]
                             .into_iter()
+                            .filter(|(_, _, selector)| {
+                                !read_only || *selector != "app-update-latest-version"
+                            })
                             .map(|(label, value, selector)| {
                                 div()
                                     .flex()
@@ -463,7 +479,19 @@ impl SheprdWindow {
                             }),
                         ),
                     )
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(message))
+                    .when(read_only, |body| {
+                        body.child(
+                            div()
+                                .debug_selector(|| "app-update-official-result".into())
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(self.about_official.summary()),
+                        )
+                    })
+                    .child(
+                        div()
+                            .when(!read_only, |text| text.font_weight(FontWeight::SEMIBOLD))
+                            .child(message),
+                    )
                     // Only when there is something to read: a release published
                     // without notes leaves the dialog exactly as it was.
                     .when_some(
@@ -581,7 +609,7 @@ impl SheprdWindow {
                 UpdateAction::Check if matches!(state, State::Error(_)) => {
                     fl!("update-panel-retry")
                 }
-                UpdateAction::Check => fl!("update-panel-check"),
+                UpdateAction::Check | UpdateAction::CheckOfficial => fl!("update-panel-check"),
                 UpdateAction::Download => fl!("update-panel-download"),
                 UpdateAction::Install => fl!("update-panel-install"),
                 UpdateAction::Upgrade => fl!("update-panel-upgrade"),
@@ -613,6 +641,9 @@ impl SheprdWindow {
                         } else {
                             // A mailbox transition cannot turn a stale Download click into approval.
                             match (action, this.updater.state()) {
+                                (UpdateAction::CheckOfficial, State::Disabled(_)) => {
+                                    this.about_official.start();
+                                }
                                 (
                                     UpdateAction::Check,
                                     State::Idle | State::Current | State::Error(_),

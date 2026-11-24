@@ -53,6 +53,23 @@ enum OfficialState {
 }
 
 impl OfficialCheck {
+    pub(crate) fn summary(&self) -> String {
+        match &self.state {
+            OfficialState::Idle | OfficialState::Checking => fl!("about-official-checking"),
+            OfficialState::Failed => fl!("about-official-failed"),
+            OfficialState::Ready(releases) => releases.first().map_or_else(
+                || fl!("about-official-none"),
+                |release| {
+                    if release.prerelease {
+                        fl!("about-official-prerelease", version = release.tag.clone())
+                    } else {
+                        fl!("about-official-latest", version = release.tag.clone())
+                    }
+                },
+            ),
+        }
+    }
+
     pub(super) fn start_once(&mut self) {
         if self.started {
             return;
@@ -255,20 +272,6 @@ impl SheprdWindow {
                 Some(commit) => fl!("about-dev-commit", commit = commit),
                 None => fl!("about-dev-build"),
             };
-            let official = match &self.about_official.state {
-                OfficialState::Idle | OfficialState::Checking => fl!("about-official-checking"),
-                OfficialState::Failed => fl!("about-official-failed"),
-                OfficialState::Ready(releases) => releases.first().map_or_else(
-                    || fl!("about-official-none"),
-                    |release| {
-                        if release.prerelease {
-                            fl!("about-official-prerelease", version = release.tag.clone())
-                        } else {
-                            fl!("about-official-latest", version = release.tag.clone())
-                        }
-                    },
-                ),
-            };
             div()
                 .debug_selector(|| "about-dev".into())
                 .flex()
@@ -290,7 +293,7 @@ impl SheprdWindow {
                         .items_center()
                         .gap(px(8.))
                         .pt(px(2.))
-                        .child(official)
+                        .child(self.about_official.summary())
                         .child(
                             div()
                                 .id("about-official-check")

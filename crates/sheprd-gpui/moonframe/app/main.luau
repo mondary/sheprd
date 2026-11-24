@@ -43,6 +43,19 @@ local function handle(look: string?, axis: string)
 	}
 end
 
+local function details_news(state: any)
+	return { to = "status", msg = { details_place = state.details_side, details_shown = state.details == true } }
+end
+
+local function details_pane(state: any, sheprd: any)
+	return ui.pane {
+		size = 300,
+		min = 200,
+		visible = if sheprd.details_visible == nil then state.details else sheprd.details_visible,
+		ui.mount "details",
+	}
+end
+
 -- What a hover, press or drag does to an edge's handle.
 local function edge_look(look: string?, phase: string): string?
 	if phase == "hover" then
@@ -130,10 +143,11 @@ return mod {
 	init = function(previous)
 		-- Sizes come from Sheprd as soon as it starts; the agents section's
 		-- height, as dragged, is kept across launches.
-		return {
+		local state = {
 			activity_bar = 48,
 			agents = previous and previous.agents,
 			details = previous ~= nil and previous.details == true,
+			details_side = previous and previous.details_side or "right",
 			devices = 0,
 			header = 34,
 			height = 780,
@@ -141,11 +155,22 @@ return mod {
 			status_bar = 24,
 			titlebar = false,
 		}
+		return state, { details_news(state) }
 	end,
 
 	update = function(state, msg)
 		if msg == "toggle-details" then
-			state.details = not state.details
+			if not state.details then
+				state.details = true
+			elseif state.details_side == "left" then
+				state.details_side = "right"
+			else
+				state.details = false
+				state.details_side = "left"
+			end
+			return state, { details_news(state) }
+		elseif msg == "details-state" then
+			return state, { details_news(state) }
 		elseif type(msg) == "table" and msg.left then
 			-- Zero is meant: the activity bar turned off, or Zen mode hiding
 			-- the left column, and then neither is drawn.
@@ -201,6 +226,38 @@ return mod {
 		-- The worktree and agent lists, unless a page or the rail takes
 		-- their place.
 		local lists = not sheprd.section and sheprd.sidebar_visible ~= false
+		local left = state.details_side == "left"
+		local terminals = ui.pane {
+			ui.column {
+				grow = true,
+				gap = "none",
+				-- The tabs and terminals, then over the tab strip's end, the
+				-- room it leaves free, the title bar's end (changes, branch,
+				-- account, the details toggle).
+				region "main",
+				-- The turns of the chat on screen, over its left gutter, where
+				-- Sheprd laid it out.
+				if sheprd.chat_turns
+					then ui.row {
+						float = { top = sheprd.chat_turns.top, left = sheprd.chat_turns.left },
+						width = sheprd.chat_turns.width,
+						height = sheprd.chat_turns.height,
+						gap = "none",
+						ui.mount "turns",
+					}
+					else false,
+				if pending or titlebar
+					then ui.row {
+						float = { top = 0, right = 0 },
+						height = state.header,
+						gap = "none",
+						align = "center",
+						pending,
+						titlebar,
+					}
+					else false,
+			},
+		}
 		return ui.column {
 			grow = true,
 			gap = "none",
@@ -291,46 +348,11 @@ return mod {
 					grow = true,
 					gap = "none",
 					ui.hsplit {
-						id = "body",
+						id = if left then "body-left" else "body-right",
 						divider = false,
-						ui.pane {
-							ui.column {
-								grow = true,
-								gap = "none",
-								-- The tabs and terminals, then over the tab strip's
-								-- end, the room it leaves free, the title bar's end
-								-- (changes, branch, account, the details toggle).
-								region "main",
-								-- The turns of the chat on screen, over its left
-								-- gutter, where Sheprd laid it out.
-								if sheprd.chat_turns
-									then ui.row {
-										float = { top = sheprd.chat_turns.top, left = sheprd.chat_turns.left },
-										width = sheprd.chat_turns.width,
-										height = sheprd.chat_turns.height,
-										gap = "none",
-										ui.mount "turns",
-									}
-									else false,
-								if pending or titlebar
-									then ui.row {
-										float = { top = 0, right = 0 },
-										height = state.header,
-										gap = "none",
-										align = "center",
-										pending,
-										titlebar,
-									}
-									else false,
-							},
-						},
-						-- Hosts with a titlebar toggle own visibility, including false.
-						ui.pane {
-							size = 300,
-							min = 200,
-							visible = if sheprd.details_visible == nil then state.details else sheprd.details_visible,
-							ui.mount "details",
-						},
+						table.unpack(if left
+							then { details_pane(state, sheprd), terminals }
+							else { terminals, details_pane(state, sheprd) }),
 					},
 					ui.row { height = state.status_bar, shrink = false, gap = "none", style = { background = theme.surface }, ui.column { grow = true, gap = "none", ui.mount "status" } },
 				},

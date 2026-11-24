@@ -6,9 +6,11 @@
 
 #[cfg(feature = "moonframe")]
 use super::group_actions;
+use super::{hex, load_state, status_name};
+#[cfg(not(feature = "moonframe"))]
+use crate::sidebar::workspaces::visible_workspace_entries;
 #[cfg(feature = "moonframe")]
 use crate::sidebar::workspaces::{grouped_keys, visible_repository_entries};
-use super::{hex, load_state, status_name};
 use crate::{
     endpoint::Endpoint,
     session_model::Sessions,
@@ -18,8 +20,6 @@ use crate::{
     },
     window::SheprdWindow,
 };
-#[cfg(not(feature = "moonframe"))]
-use crate::sidebar::workspaces::visible_workspace_entries;
 use gpui::App;
 use serde_json::{Value, json};
 use sheprd_session::{Keeper, Session, Workspace};

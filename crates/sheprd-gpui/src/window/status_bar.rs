@@ -136,82 +136,81 @@ impl SheprdWindow {
             .children(self.render_system_load())
             .children(self.render_gpu_load())
             .children(self.render_network_quality(cx))
-            .children(self.caffeine_button(items.keep_awake, cx));
+            .children(self.caffeine_button(items.keep_awake || !controls, cx));
         if !controls {
             return bar;
         }
-        bar
-            .when(items.theme.shown(), |bar| {
-                bar.child(
-                    self.status_button(
-                        "status-theme",
-                        glyph("icons/theme.svg", self.theme.foreground),
-                        fl!("status-bar-theme"),
-                        items.theme,
-                    )
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_theme_picker(window, cx);
-                    })),
+        bar.when(items.theme.shown(), |bar| {
+            bar.child(
+                self.status_button(
+                    "status-theme",
+                    glyph("icons/theme.svg", self.theme.foreground),
+                    fl!("status-bar-theme"),
+                    items.theme,
                 )
-            })
-            .when(items.shortcuts.shown(), |bar| {
-                bar.child(
-                    self.status_button(
-                        "status-keybinds",
-                        glyph("icons/keyboard.svg", self.theme.foreground),
-                        fl!("status-bar-shortcuts"),
-                        items.shortcuts,
-                    )
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_keybinds(window, cx);
-                    })),
-                )
-            })
-            .when(items.report_issue.shown(), |bar| {
-                bar.child(
-                    self.status_button(
-                        "report-issue",
-                        self.issue_ring(),
-                        fl!("status-bar-report-issue"),
-                        items.report_issue,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| this.open_report_issue(cx))),
-                )
-            })
-            .child(
-                div()
-                    .id("status-version")
-                    .debug_selector(|| "status-version".into())
-                    .map(|control| {
-                        self.chrome_stop(crate::window::chrome_focus::Region::StatusBar, control)
-                    })
-                    .role(Role::Button)
-                    .aria_label(if self.updater.update_available() {
-                        fl!("status-bar-update-available")
-                    } else {
-                        fl!("status-bar-version", version = APP_VERSION)
-                    })
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(rgb(self.theme.active)))
-                    // A waiting update is the one status here worth
-                    // interrupting for, so it takes the accent color
-                    // the rest of the chrome reserves for chosen rows.
-                    .text_color(rgb(if self.updater.update_available() {
-                        self.theme.primary()
-                    } else {
-                        self.theme.muted
-                    }))
-                    .child(if self.updater.update_available() {
-                        fl!("status-bar-update-available")
-                    } else {
-                        APP_VERSION.to_owned()
-                    })
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_app_update(false, window, cx);
-                    })),
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.open_theme_picker(window, cx);
+                })),
             )
+        })
+        .when(items.shortcuts.shown(), |bar| {
+            bar.child(
+                self.status_button(
+                    "status-keybinds",
+                    glyph("icons/keyboard.svg", self.theme.foreground),
+                    fl!("status-bar-shortcuts"),
+                    items.shortcuts,
+                )
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.open_keybinds(window, cx);
+                })),
+            )
+        })
+        .when(items.report_issue.shown(), |bar| {
+            bar.child(
+                self.status_button(
+                    "report-issue",
+                    self.issue_ring(),
+                    fl!("status-bar-report-issue"),
+                    items.report_issue,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.open_report_issue(cx))),
+            )
+        })
+        .child(
+            div()
+                .id("status-version")
+                .debug_selector(|| "status-version".into())
+                .map(|control| {
+                    self.chrome_stop(crate::window::chrome_focus::Region::StatusBar, control)
+                })
+                .role(Role::Button)
+                .aria_label(if self.updater.update_available() {
+                    fl!("status-bar-update-available")
+                } else {
+                    fl!("status-bar-version", version = APP_VERSION)
+                })
+                .flex_none()
+                .whitespace_nowrap()
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(self.theme.active)))
+                // A waiting update is the one status here worth
+                // interrupting for, so it takes the accent color
+                // the rest of the chrome reserves for chosen rows.
+                .text_color(rgb(if self.updater.update_available() {
+                    self.theme.primary()
+                } else {
+                    self.theme.muted
+                }))
+                .child(if self.updater.update_available() {
+                    fl!("status-bar-update-available")
+                } else {
+                    APP_VERSION.to_owned()
+                })
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.open_app_update(false, window, cx);
+                })),
+        )
     }
 
     /// The focused agent's model, from the `model` and `effort` tokens its
