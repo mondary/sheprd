@@ -88,6 +88,26 @@ return mod {
 			style = { background = theme.sidebar, border = "right", border_color = theme.active, padding = { y = 6 } },
 			ui.column { gap = "none", table.unpack(rows) },
 			ui.spacer(),
+			-- The sparkles (Moonframe's built-in feedback mod, which draws its
+			-- own button and dialog): say what to change, and an agent changes
+			-- this layout, asking before each edit.
+			if app.acp then ui.row {
+				class = "activity-feedback",
+				align = "center",
+				gap = "none",
+				height = 36,
+				shrink = false,
+				ui.row { width = 3, shrink = false },
+				ui.column {
+					align = "center",
+					justify = "center",
+					width = 32,
+					height = 32,
+					shrink = false,
+					style = { margin = { left = 2 } },
+					ui.mount "feedback",
+				},
+			} else false,
 			button("settings", "settings", "Settings", nil, false, false, { command = "settings" }, theme),
 		}
 	end,

@@ -27,7 +27,7 @@ from pathlib import Path
 POLL = 3.0
 TIMEOUT = 3
 
-CACHE = Path(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")) / "sheprd" / "images"
+CACHE = Path(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")) / "sheprd-moonframe" / "images"
 COPIED = {}
 DEBUG = Path("/tmp/gitcounts-debug.log")
 
