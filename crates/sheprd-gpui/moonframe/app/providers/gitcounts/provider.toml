@@ -1,0 +1,6 @@
+# Local uncommitted line counts for the checkouts a mod names, shared as
+# `app.gitcounts` for the right pane's ± badge. The git built into this build
+# is left out, so this runs `git diff` with your access.
+command = ["python3", "gitcounts.py"]
+kind    = "process"
+publish = "latest"

@@ -1,0 +1,6 @@
+# The focused repository's recent commits, shared as `app.gitgraph`, for the
+# right pane's graph. The git built into this build is left out, so this runs
+# `git log` with your access, as the project the user works in moves.
+command = ["bash", "gitgraph.sh"]
+kind    = "process"
+publish = "latest"

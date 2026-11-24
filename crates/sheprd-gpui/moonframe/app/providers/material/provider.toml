@@ -1,0 +1,6 @@
+# Material Icon Theme icons, resolved for the focused checkout's files and
+# folders, shared as `app.material`. Their SVGs are copied into the app's
+# image cache, the only folder a mod may show pictures from.
+command = ["python3", "material.py"]
+kind    = "process"
+publish = "latest"

@@ -16,7 +16,7 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 | `mods/activity/main.luau` | The activity bar |
 | `mods/worktrees/main.luau` | The left pane's head and worktree rows, linked worktrees under their checkout, drawn in the sidebar layout Sheprd's config names (`layout = "orca"`, `compact`, `minimal`, ...) |
 | `mods/agents/main.luau` | The agents under the worktrees, in Sheprd's sort and the same layout |
-| `mods/details/main.luau` | The right pane; open it from Details in the status bar |
+| `mods/details/main.luau` | Files, Git (changes above history), and Agents. Open the right pane from the title bar, or from Details in the status bar on hosts without a title-bar toggle. |
 | `mods/status/main.luau` | The status bar |
 | `components/sheprd-*.luau` | What the worktrees and agents share: a row highlighted as the layout marks the selected one, the status dot, and the section names |
 | `style.luau` | The hover looks, for every mod |
@@ -26,15 +26,21 @@ The terminals, tabs, and pages stay one Rust view, placed with
 
 ## Changing it
 
-Saving a file reloads the window. To keep a change of your own, copy the file
-to the same path under `~/.config/sheprd-moonframe` and edit the copy; deleting
-it brings the original back. The sparkles at the bottom right ask an agent to
-make a change, and it asks before each edit. View > Inspect Element (⌥⌘I, or
+Edit the sources under `crates/sheprd-gpui/moonframe/app`. To try a change in
+the installed Sheprd, copy the changed file to the same relative path under
+`~/.config/sheprd` (`~/.config/sheprd-moonframe` for the development host).
+Sheprd reloads it without a restart; removing the copy restores the bundled
+version. The sparkles at the bottom right ask an agent to make a change, and
+it asks before each edit. View > Inspect Element (⌥⌘I, or
 ⇧⌘X to go straight to picking) shows what built any part, and its file and line.
 
 Run `just run-moonframe --check` after a change. It loads what is
 drawn at that moment, so a mistake in a row that only appears with an agent
 shows in the log when one appears: `unknown key` names it.
+
+To check the right pane with a focused worktree, run
+`scripts/check-moonframe-details.sh /path/to/moonframe /path/to/moonframe/app`.
+It exercises the visibility controls and all three tabs without reading your profile.
 
 ## `app.sheprd`
 

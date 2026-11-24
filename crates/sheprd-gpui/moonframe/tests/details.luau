@@ -1,0 +1,76 @@
+-- check-moonframe-details.sh supplies the production shell, status and details modules.
+local icon = "~/.cache/sheprd/images/fixture.png"
+local app = {
+	sheprd = {
+		workspaces = { { focused = true, id = "w", label = "repo", repo_key = "/repo/.git" } },
+		agents = { { workspace = "w", name = "agent in repo", pane = "p", status = "working" } },
+	},
+	sheprd_theme = { sidebar = "#345678" },
+	files = { available = true, path = "/repo", root = "repo", dirs = { [""] = { { name = "entry.txt" } } } },
+	gitcounts = { counts = { ["/repo"] = { icon = icon, changes = { { path = "changed.txt", status = "M" } } } } },
+	gitgraph = { commits = { { sha = "abc", parents = {}, subject = "first commit" } } },
+}
+
+local function find(node, predicate)
+	if type(node) ~= "table" or node.visible == false then return nil end
+	if predicate(node) then return node end
+	for _, child in ipairs(node) do
+		local hit = find(child, predicate)
+		if hit then return hit end
+	end
+	if node.type == "list" then
+		for i = 1, node.count do
+			local hit = find(node.row(i), predicate)
+			if hit then return hit end
+		end
+	end
+	return nil
+end
+
+local function text(node, label)
+	return find(node, function(n) return n.text == label or n.label == label end)
+end
+
+local function control(node, label)
+	return find(node, function(n) return n.msg ~= nil and text(n, label) end)
+end
+
+return mod {
+	styles = details.styles,
+	view = function()
+		local layout = shell.init(nil)
+		local function opened()
+			return find(shell.view(layout, app), function(n) return n.type == "mount" and n.mod == "details" end) ~= nil
+		end
+		local function status_toggle()
+			return control(status.view({}, app), "Details")
+		end
+		local toggle = assert(status_toggle(), "host without a titlebar toggle needs a status button")
+		assert(toggle.to == "shell" and not opened())
+		shell.update(layout, toggle.msg)
+		assert(opened(), "status button did not open Details")
+		shell.update(layout, toggle.msg)
+		assert(not opened(), "status button did not close Details")
+		shell.update(layout, toggle.msg) -- Local open must not override a native close.
+		for _, visible in { false, true, false } do
+			app.sheprd.details_visible = visible
+			assert(opened() == visible and not status_toggle(), "native titlebar must own visibility")
+		end
+		app.sheprd.details_visible = nil
+
+		local state = details.init(nil)
+		local page = details.view(state, app)
+		local pages = {}
+		for _, pair in { { "Files", "entry.txt" }, { "Agents", "agent in repo" }, { "Git", "changed.txt" } } do
+			local tab = assert(control(page, pair[1]), "missing tab: " .. pair[1])
+			state = details.update(state, tab.msg) or state
+			page = details.view(state, app)
+			assert(text(page, pair[2]), "missing content on " .. pair[1])
+			assert(find(page, function(n) return n.type == "image" and n.src == icon end), "missing project icon")
+			table.insert(pages, page)
+		end
+		assert(text(page, "No branch") and text(page, "History") and text(page, "first commit"), "incomplete Git page")
+		-- Hand all three views to Moonframe: invalid child properties are not errors until it reads the tree.
+		return ui.column(pages)
+	end,
+}
