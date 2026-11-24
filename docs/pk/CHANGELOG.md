@@ -2,6 +2,12 @@
 
 Local fork versions; upstream release notes are generated separately.
 
+## [2026.11.07] - 2026-11-24
+
+### Fixed
+
+- `update-app.sh` reads the project changelog at the repository root after the umbrella grouping.
+
 ## [2026.11.06] - 2026-11-24
 
 ### Changed
