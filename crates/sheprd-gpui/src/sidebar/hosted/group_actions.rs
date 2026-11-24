@@ -49,6 +49,12 @@ impl SheprdWindow {
         cx.notify();
     }
 
+    pub(super) fn remove_project_group(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        if cx.try_global::<Groups>().is_some() && cx.global_mut::<Groups>().remove(id) {
+            cx.notify();
+        }
+    }
+
     pub(super) fn toggle_project_group(&mut self, id: Uuid, cx: &mut Context<Self>) {
         if cx.try_global::<Groups>().is_some() {
             cx.global_mut::<Groups>().toggle(id);
@@ -113,16 +119,21 @@ impl SheprdWindow {
         });
         cx.spawn_in(window, async move |this, cx| {
             let result = prepared.await;
-            let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok(dir) if this.local_workspaces_use_core() => {
-                    this.open_local_kept_folder(&name, dir, cx);
+            let _ = this.update_in(cx, |this, window, cx| {
+                if cx.global::<Groups>().get(id).is_none() {
+                    return;
                 }
-                Ok(dir) => {
-                    if let Err(error) = this.open_named_project_at(dir, name, window, cx) {
-                        this.show_flash(Flash::warning(error.to_string()), cx);
+                match result {
+                    Ok(dir) if this.local_workspaces_use_core() => {
+                        this.open_local_kept_folder(&name, dir, cx);
                     }
+                    Ok(dir) => {
+                        if let Err(error) = this.open_named_project_at(dir, name, window, cx) {
+                            this.show_flash(Flash::warning(error.to_string()), cx);
+                        }
+                    }
+                    Err(error) => this.show_flash(Flash::warning(error.to_string()), cx),
                 }
-                Err(error) => this.show_flash(Flash::warning(error.to_string()), cx),
             });
         })
         .detach();

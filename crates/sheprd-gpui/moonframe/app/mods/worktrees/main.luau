@@ -7,6 +7,7 @@
 -- other, and the lines under it start at the name. Inspect reaches each
 -- label, branch and pull request. The agents under them are their own mod
 -- (`mods/agents`); the highlight is `sheprd-row`'s.
+local confirm = use "confirm"
 local icon_button = use "icon-button"
 local row = use "sheprd-row"
 local status_dot = use "sheprd-status-dot"
@@ -587,7 +588,7 @@ local function device_header(device: any, layout: any, theme: any)
 end
 
 -- A project's group is sidebar metadata, independent of its checkout path.
--- A group shell replaces the heading's idle appearance, not its fold control.
+-- The folder stays visible even when its session has an agent status.
 local function group_row(group: any, session: any, layout: any, theme: any)
 	local target = if group then group.id else true
 	local over = drag.drop and drag.drop.group == target
@@ -627,10 +628,8 @@ local function group_row(group: any, session: any, layout: any, theme: any)
 			context = if session then menu(session) else nil,
 			to = if group then LINK else nil,
 			tooltip = if group then "Open group workspace" else "Drop a project here to remove it from its group",
-			if session
-				then status_dot { status = session.agent_status, theme = theme, height = DOT }
-				elseif group
-				then ui.icon { if group.folded then "folder-closed" else "folder-open", size = "small", style = { color = theme.muted } }
+			if group
+				then ui.icon { if group.folded then "folder-closed" else "folder-open", size = "small", style = { color = group.color } }
 				else false,
 			ui.text {
 				if group then group.name else "Ungrouped",
@@ -640,7 +639,16 @@ local function group_row(group: any, session: any, layout: any, theme: any)
 				weight = if focused then "bold" else "medium",
 				style = { color = if focused then theme.foreground else theme.subtext },
 			},
+			if session then status_dot { status = session.agent_status, theme = theme, height = DOT } else false,
 		},
+		if group
+			then icon_button {
+				icon = "trash-2",
+				size = "small",
+				tooltip = "Remove group",
+				msg = { remove_group = group.id, name = group.name },
+			}
+			else false,
 	}
 end
 
@@ -832,6 +840,13 @@ return mod {
 			end
 		elseif type(msg) == "table" and msg.group_draft and state.new_group ~= nil then
 			state.new_group = msg.value or ""
+		elseif type(msg) == "table" and msg.remove_group then
+			state.removing_group = { id = msg.remove_group, name = msg.name, open = true }
+		elseif msg == "cancel_remove_group" and state.removing_group then
+			state.removing_group.open = false
+		elseif msg == "confirm_remove_group" and state.removing_group and state.removing_group.open then
+			state.removing_group.open = false
+			return state, { { to = LINK, msg = { project_group = "remove", id = state.removing_group.id } } }
 		elseif type(msg) == "table" and msg.sheprd then
 			-- A row's click or right click, for Sheprd, and opening a hit
 			-- closes the search.
@@ -1005,6 +1020,7 @@ return mod {
 					head_tool { icon = "search", tooltip = "Search devices, worktrees, branches and notes", msg = "search" },
 				},
 			}
+		local removing = state.removing_group
 		return ui.column {
 			class = "sheprd-worktrees",
 			grow = true,
@@ -1061,6 +1077,17 @@ return mod {
 				ui.column { shrink = false, gap = "none", table.unpack(rows) },
 			},
 			-- New and menu are the `actions` mod's, under the rule below.
+			if removing
+				then confirm {
+					open = removing.open,
+					title = `Remove group “{removing.name}”?`,
+					message = "Projects will be ungrouped. Open workspaces, tabs, agents and files are kept.",
+					confirm_label = "Remove group",
+					confirm = "confirm_remove_group",
+					cancel = "cancel_remove_group",
+					danger = true,
+				}
+				else false,
 		}
 	end,
 }

@@ -148,6 +148,18 @@ impl Groups {
         Ok(())
     }
 
+    pub(super) fn remove(&mut self, id: Uuid) -> bool {
+        let Some(index) = self.saved.groups.iter().position(|group| group.id == id) else {
+            return false;
+        };
+        self.saved.groups.remove(index);
+        self.saved.projects.retain(|_, entry| entry.group != id);
+        // An open group workspace becomes an ordinary workspace. Its tabs,
+        // working directory and files do not belong to sidebar metadata.
+        self.changed();
+        true
+    }
+
     pub(crate) fn toggle(&mut self, id: Uuid) {
         if let Some(group) = self.saved.groups.iter_mut().find(|group| group.id == id) {
             group.folded = !group.folded;

@@ -15,6 +15,8 @@ pub enum Action {
     #[cfg(feature = "moonframe")]
     CreateProjectGroup(String),
     #[cfg(feature = "moonframe")]
+    RemoveProjectGroup(uuid::Uuid),
+    #[cfg(feature = "moonframe")]
     ToggleProjectGroup(uuid::Uuid),
     #[cfg(feature = "moonframe")]
     OpenProjectGroup(uuid::Uuid),
@@ -137,6 +139,8 @@ impl SheprdWindow {
             }
             #[cfg(feature = "moonframe")]
             Action::CreateProjectGroup(name) => self.create_project_group(&name, cx),
+            #[cfg(feature = "moonframe")]
+            Action::RemoveProjectGroup(id) => self.remove_project_group(id, cx),
             #[cfg(feature = "moonframe")]
             Action::ToggleProjectGroup(id) => self.toggle_project_group(id, cx),
             #[cfg(feature = "moonframe")]

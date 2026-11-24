@@ -347,7 +347,29 @@ impl SheprdWindow {
         cx: &App,
     ) -> Value {
         if let Some(groups) = group_actions::for_endpoint(endpoint, cx) {
-            state["project_groups"] = json!(groups.entries());
+            state["project_groups"] = Value::Array(
+                groups
+                    .entries()
+                    .iter()
+                    .map(|group| {
+                        // A random UUID gives old and new groups a stable hue
+                        // without adding a field to their saved state.
+                        let hue = f32::from((group.id.as_u128() >> 112) as u16) / 65_536.;
+                        let rgb = gpui::Rgba::from(gpui::Hsla {
+                            h: hue,
+                            s: 0.65,
+                            l: 0.55,
+                            a: 1.,
+                        });
+                        json!({
+                            "id": group.id,
+                            "name": group.name,
+                            "folded": group.folded,
+                            "color": hex(self.theme.ink(u32::from(rgb) >> 8)),
+                        })
+                    })
+                    .collect(),
+            );
         }
         if folded {
             let collapsed = if index == 0 {

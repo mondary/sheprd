@@ -66,6 +66,12 @@ launcher. Agents starting there get `AGENTS.md` (also imported by
 `project-groups/groups.json` in Sheprd's state directory. Moving a project
 updates the roster without replacing the group's workspace.
 
+Each group folder keeps its own color when folded, reopened, or restored
+after a restart. Click the trash icon on its row, then **Remove group**.
+That only removes the grouping: projects return to the ungrouped list.
+Open workspaces, including the group's own workspace and its agents, stay
+open. No files are deleted.
+
 ## Changing it
 
 Edit the sources under `crates/sheprd-gpui/moonframe/app`. To try a change in

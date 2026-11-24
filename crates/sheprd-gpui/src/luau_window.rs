@@ -210,6 +210,7 @@ fn project_group_action(message: &Data) -> Option<Action> {
     let id = || uuid::Uuid::parse_str(field("id")?).ok();
     match field("project_group")? {
         "create" => Some(Action::CreateProjectGroup(field("name")?.to_owned())),
+        "remove" => Some(Action::RemoveProjectGroup(id()?)),
         "fold" => Some(Action::ToggleProjectGroup(id()?)),
         "open" => Some(Action::OpenProjectGroup(id()?)),
         "move" => Some(Action::AssignProjectGroup {
