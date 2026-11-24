@@ -13,7 +13,7 @@ fixture=$(mktemp -d "$root/target/moonframe-details.XXXXXX")
 trap 'rm -rf "$fixture"' EXIT
 mkdir "$fixture/components"
 ln -s "$toolbox"/components/* "$fixture/components/"
-ln -sf "$app/components/sheprd-status-dot.luau" "$fixture/components/sheprd-status-dot.luau"
+ln -sf "$app/components/sheprd-status-dot.luau" "$app/components/sheprd-repository-picker.luau" "$fixture/components/"
 cp "$toolbox/style.luau" "$fixture/style.luau"
 module() {
     printf 'local %s = (function()\n' "$1"

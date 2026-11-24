@@ -114,6 +114,20 @@ pub(crate) struct SetBadgePreview {
 /// otherwise the keymap from the last validated config, or the catalog
 /// defaults before any config has loaded.
 pub(crate) fn bind_keys(cx: &mut App) {
+    // The Moonframe Root uses these keys for focus traversal. Only remove
+    // those actions when the terminal itself (not a child input) has focus.
+    cx.bind_keys([
+        KeyBinding::new(
+            "tab",
+            gpui::Unbind("root::Tab".into()),
+            Some("SheprdTerminalInput"),
+        ),
+        KeyBinding::new(
+            "shift-tab",
+            gpui::Unbind("root::TabPrev".into()),
+            Some("SheprdTerminalInput"),
+        ),
+    ]);
     let keymap = cx
         .try_global::<crate::window::ActiveServerKeymap>()
         .and_then(|active| active.0.clone())

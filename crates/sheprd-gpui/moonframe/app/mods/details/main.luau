@@ -296,10 +296,16 @@ local function status_color(status: string, theme: any): string
 	return theme.warning
 end
 
+local repository_picker = use "sheprd-repository-picker"
+
+local function repository_request(state)
+	return { to = "provider:repositories", msg = { git_scope = state.git_scope or "", repository = state.repository } }
+end
+
 return mod {
 	-- The focused worktree's repository (sheprd), what gitcounts reads for it
 	-- (its uncommitted lines, changed files and icon), and its commit graph.
-	subscribe = { "provider/sheprd", "provider/gitcounts", "provider/gitgraph", "provider/files", "provider/material" },
+	subscribe = { "provider/sheprd", "provider/gitcounts", "provider/gitgraph", "provider/files", "provider/material", "provider/repositories" },
 
 	styles = {
 		[".details-tab"] = { padding = { 5, 10 }, radius = 6, color = "muted-foreground" },
@@ -329,6 +335,7 @@ return mod {
 		-- again after a reload, when they have just restarted and forgotten
 		-- which checkout to read the changed files of.
 		local sends = {}
+		if type(state.git_scope) == "string" then table.insert(sends, repository_request(state)) end
 		if type(state.workspace) == "string" and type(state.label) == "string" then
 			table.insert(sends, { to = "provider:gitcounts", msg = { workspace = state.workspace, label = state.label } })
 			table.insert(sends, { to = "provider:gitgraph", msg = { workspace = state.workspace, label = state.label } })
@@ -351,6 +358,9 @@ return mod {
 		if msg.select then
 			state.tab = msg.select
 			return
+		elseif type(msg.select_repository) == "string" and msg.git_scope == state.git_scope then
+			state.repository = msg.select_repository
+			return state, { repository_request(state) }
 		elseif msg.toggle_file then
 			state.files_open[msg.toggle_file] = if state.files_open[msg.toggle_file] then nil else true
 			return state, { { to = "provider:files", msg = files_open_message(state) } }
@@ -388,10 +398,19 @@ return mod {
 		-- between, and the details pane would otherwise keep a stale entry.
 		state.workspace = focused.id
 		state.label = focused.label
-		return state, {
+		local sends = {
 			{ to = "provider:gitcounts", msg = { workspace = focused.id, label = focused.label } },
-			{ to = "provider:gitgraph", msg = { workspace = focused.id, label = focused.label } },
 		}
+		local scope = focused.local_cwd
+		if state.git_scope ~= scope then
+			state.git_scope = scope
+			state.repository = nil
+			table.insert(sends, repository_request(state))
+		end
+		if not scope then
+			table.insert(sends, { to = "provider:gitgraph", msg = { workspace = focused.id, label = focused.label } })
+		end
+		return state, sends
 	end,
 
 	view = function(state, app)
@@ -434,6 +453,35 @@ return mod {
 		local graph = app.gitgraph
 		local commits = graph and graph.commits or {}
 		local github = graph and type(graph.github) == "string" and graph.github ~= "" and graph.github or nil
+		local scope = focused.local_cwd
+		local repositories = app.repositories
+		local scoped = scope and repositories and repositories.scope == scope and repositories or nil
+		local selected = scoped and scoped.selected or nil
+		local repo_pending = not scoped
+		-- The requested selection can disappear after a rescan. In that case
+		-- accept the provider's fallback, but never display the old selection
+		-- while the new one is still present in the list.
+		if scoped and state.repository and (not selected or selected.path ~= state.repository) then
+			for _, repo in scoped.repos do
+				if repo.path == state.repository then repo_pending = true end
+			end
+		end
+		local branch = focused.branch
+		local reveal = root
+		local reviewable = not scope or type(focused.repo_key) == "string" or type(focused.branch) == "string"
+		local totals = local_counts
+		if scope then
+			if repo_pending then selected = nil end
+			changes = selected and selected.changes or {}
+			is_dirty = selected and selected.dirty or false
+			branch = selected and selected.branch or nil
+			reveal = selected and selected.path or nil
+			reviewable = reviewable and scoped ~= nil and #scoped.repos == 1
+			totals = selected
+			graph = selected
+			commits = graph and graph.commits or {}
+			github = graph and graph.github ~= "" and graph.github or nil
+		end
 
 		local agent_rows = {}
 		for _, agent in sheprd.agents do
@@ -464,8 +512,8 @@ return mod {
 				align = "center",
 				gap = "small",
 				style = { padding = { x = 8 }, height = 24 },
-				msg = { command = "review_changes" },
-				to = "provider:sheprd",
+				msg = if reviewable then { command = "review_changes" } else nil,
+				to = if reviewable then "provider:sheprd" else nil,
 				tooltip = change.path,
 				material_image(icon) or ui.icon { name = "file", size = "small", style = { color = theme.muted } },
 				ui.text {
@@ -502,11 +550,11 @@ return mod {
 					then ui.text { `{#changes}`, size = "small", tone = "muted" }
 					else false,
 				ui.spacer(),
-				if root then ui.row {
+				if reveal then ui.row {
 					class = "details-reveal",
 					align = "center",
 					gap = "small",
-					msg = { reveal = root },
+					msg = { reveal = reveal },
 					to = "provider:files",
 					tooltip = "Reveal in Finder",
 					ui.icon { name = "folder-open", size = "small", style = { color = theme.muted } },
@@ -521,23 +569,24 @@ return mod {
 				gap = "small",
 				style = { padding = { x = 8 }, height = 22 },
 				ui.text {
-					if type(focused.branch) == "string" and focused.branch ~= "" then focused.branch else "No branch",
+					if type(branch) == "string" and branch ~= "" then branch else "No branch",
 					size = "small",
 					tone = "muted",
 					truncate = true,
 				},
 				ui.spacer(),
-				if local_counts and (local_counts.added or 0) > 0
-					then ui.text { `+{local_counts.added}`, size = "small", style = { color = theme.added or theme.success } }
+				if totals and (totals.added or 0) > 0
+					then ui.text { `+{totals.added}`, size = "small", style = { color = theme.added or theme.success } }
 					else false,
-				if local_counts and (local_counts.removed or 0) > 0
-					then ui.text { `-{local_counts.removed}`, size = "small", style = { color = theme.removed or theme.danger } }
+				if totals and (totals.removed or 0) > 0
+					then ui.text { `-{totals.removed}`, size = "small", style = { color = theme.removed or theme.danger } }
 					else false,
 				if is_dirty then ui.badge { "uncommitted" } else false,
 			},
 			if #change_rows == 0
 				then ui.text {
-					if is_dirty then "Reading the changes…" else "No uncommitted changes",
+					if selected and selected.error then "Could not read changes"
+						elseif is_dirty then "Reading the changes…" else "No uncommitted changes",
 					tone = "muted",
 					style = { padding = { x = 8, y = 6 } },
 				}
@@ -584,7 +633,7 @@ return mod {
 				"No repository",
 				tone = "muted",
 			} else ui.text {
-				"Reading commits…",
+				if selected then "No commits" else "Reading commits…",
 				tone = "muted",
 			},
 		}
@@ -723,7 +772,13 @@ return mod {
 			class = "details-git-pane",
 			grow = true,
 			gap = "none",
-			ui.vsplit {
+			if scoped and (#scoped.repos > 1 or scoped.limited) then repository_picker {
+				repos = scoped.repos, selected = selected and selected.path, limited = scoped.limited, scope = scope,
+			} else false,
+			if scope and not selected then ui.text {
+				if repo_pending then "Reading repositories…" else "No Git repository in this folder",
+				tone = "muted", style = { padding = { x = 8, y = 6 } },
+			} else ui.vsplit {
 				id = "details-git-split",
 				ui.pane {
 					class = "details-changes-split",

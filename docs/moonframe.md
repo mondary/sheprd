@@ -27,8 +27,16 @@ named folders, the root and default folders, and their open/closed variants.
 Moonframe loads those images from its cache and uses built-in icons when
 the corresponding Material asset is missing.
 
-The status bar cup turns Sheprd's native keep-awake hold on or off. It
-shares its state with `sheprd caffeine` and respects `keep_awake_scope`.
+When a local workspace opens a parent folder containing separate Git checkouts,
+**Git → Repositories** lists them with their branches and change counts. Select
+a checkout to see its changed files and recent commits. The scan skips hidden
+and common build directories and stops at each discovered checkout. With the
+terminal focused, Tab and Shift-Tab go to the program running in the pane.
+
+The status bar uses the classic controls for provider quotas, system and GPU
+load, and the keep-awake cup. Click the version to open About or Check for
+Updates. On local builds the check reads official releases without installing
+one. See the [SheprdPK changelog](pk/CHANGELOG.md) for the local build version.
 
 The terminals, tabs, and pages stay one Rust view, placed with
 `ui.view { name = "sheprd", id = "main", props = { region = "main" } }`.

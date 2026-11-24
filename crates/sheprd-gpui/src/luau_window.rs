@@ -134,7 +134,9 @@ impl Feeds {
     fn offer(&self, last: &mut Published, state: HostedState) -> bool {
         // `palette` is for the toolkit, not mods.
         let load = self.load.offer(&mut last.load, state.load);
-        let main = self.main.offer(&mut last.main, state.main);
+        let mut main = state.main;
+        main["status_version"] = pk_version().into();
+        let main = self.main.offer(&mut last.main, main);
         let theme = self.theme.offer(&mut last.theme, state.theme);
         load && main && theme
     }
@@ -203,6 +205,15 @@ fn action(message: &Data) -> Option<Action> {
         .or_else(|| flag("toggle_agent_sort").map(|_| Action::ToggleAgentSort))
         .or_else(|| flag("toggle_caffeine").filter(|toggle| *toggle).map(|_| Action::ToggleCaffeine))
         .or_else(|| flag("open_build_pr").map(|_| Action::OpenBuildPullRequest))
+        .or_else(|| flag("check_for_updates").filter(|check| *check).map(|_| Action::CheckForUpdates))
+}
+
+pub(crate) fn pk_version() -> &'static str {
+    include_str!("../../../docs/pk/CHANGELOG.md")
+        .lines()
+        .filter_map(|line| line.strip_prefix("## ["))
+        .find_map(|line| line.split_once("] - ").map(|(version, _)| version))
+        .unwrap_or(crate::APP_VERSION)
 }
 
 fn project_group_action(message: &Data) -> Option<Action> {
@@ -297,7 +308,7 @@ pub(crate) fn run() -> ExitCode {
     Moonframe::new("sheprd-moonframe")
         .title("Sheprd")
         .app_id("dev.sheprd.moonframe")
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(pk_version())
         .app_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/moonframe/app"))
         .icon(ICON_PNG)
         .assets(crate::embed::assets())
@@ -340,6 +351,7 @@ impl SheprdRegion {
             Some("header") => Some(Region::Header),
             Some("sidebar") => Some(Region::Sidebar),
             Some("status") => Some(Region::StatusBar),
+            Some("status-metrics") => Some(Region::StatusMetrics),
             _ => None,
         };
         let view = match region {

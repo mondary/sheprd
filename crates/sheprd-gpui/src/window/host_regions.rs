@@ -22,6 +22,8 @@ pub enum Region {
     Overlay,
     Sidebar,
     StatusBar,
+    #[cfg(feature = "moonframe")]
+    StatusMetrics,
 }
 
 /// The sizes the regions want, in pixels.
@@ -90,6 +92,11 @@ impl SheprdWindow {
             Region::StatusBar if self.status_bar_visible => self
                 .region_root()
                 .child(self.render_status_bar(cx))
+                .into_any_element(),
+            #[cfg(feature = "moonframe")]
+            Region::StatusMetrics if self.status_bar_visible => self
+                .region_root()
+                .child(self.render_hosted_status_bar(cx))
                 .into_any_element(),
             _ => Empty.into_any_element(),
         }

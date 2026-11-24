@@ -29,6 +29,15 @@ impl SheprdWindow {
     }
 
     pub(crate) fn render_status_bar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        self.render_status_bar_items(true, cx)
+    }
+
+    #[cfg(feature = "moonframe")]
+    pub(crate) fn render_hosted_status_bar(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        self.render_status_bar_items(false, cx)
+    }
+
+    fn render_status_bar_items(&self, controls: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         // A host with no Herdr 1 at all runs its terminals in herdr-core, so
         // its Herdr 1 is never connected and saying so would ask the user to
         // install one the window does not need.
@@ -44,7 +53,7 @@ impl SheprdWindow {
         let height = px(self.status_bar_height());
         let usage = self.render_usage(cx);
         let has_usage = usage.is_some();
-        div()
+        let bar = div()
             .id("connection-status")
             .debug_selector(|| "connection-status".into())
             .role(Role::Status)
@@ -62,7 +71,7 @@ impl SheprdWindow {
             .overflow_hidden()
             .items_center()
             .gap(px(6.))
-            .px_3()
+            .when(controls, |bar| bar.px_3())
             .bg(self.fill().panel(self.theme.surface))
             .text_color(rgb(self.theme.foreground))
             .children(self.render_agent_model(cx))
@@ -127,7 +136,11 @@ impl SheprdWindow {
             .children(self.render_system_load())
             .children(self.render_gpu_load())
             .children(self.render_network_quality(cx))
-            .children(self.caffeine_button(items.keep_awake, cx))
+            .children(self.caffeine_button(items.keep_awake, cx));
+        if !controls {
+            return bar;
+        }
+        bar
             .when(items.theme.shown(), |bar| {
                 bar.child(
                     self.status_button(

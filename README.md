@@ -4,6 +4,10 @@
 
 <h1 align="center">Sheprd</h1>
 
+**SheprdPK — version 2026.11.02** · [English](README_en.md) · [Changelog du fork](docs/pk/CHANGELOG.md)
+
+La barre Moonframe reprend les quotas et les ressources de la vue classique. Le panneau Git permet de choisir un dépôt dans un dossier parent. [Documentation Moonframe](docs/moonframe.md) · [Soutenir le fork sur Ko-fi](https://ko-fi.com/pouark).
+
 <p align="center">
   <a href="https://github.com/sheprd-labs/sheprd/actions/workflows/ci.yml"><img src="https://github.com/sheprd-labs/sheprd/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://discord.gg/GE4JRp8kaX"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Join the Sheprd Discord"></a>

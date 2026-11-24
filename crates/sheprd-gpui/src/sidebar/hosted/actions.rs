@@ -10,6 +10,8 @@ use gpui::{Context, Window};
 /// endpoint id; none means the selected one.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
+    #[cfg(feature = "moonframe")]
+    CheckForUpdates,
     /// Runs a command by its name in the catalog, as a shortcut does.
     Command(String),
     #[cfg(feature = "moonframe")]
@@ -128,6 +130,8 @@ impl SheprdWindow {
     ) {
         let pointer = window.mouse_position();
         match action {
+            #[cfg(feature = "moonframe")]
+            Action::CheckForUpdates => self.check_from_status(window, cx),
             Action::Command(name) => {
                 let found = sheprd_commands::COMMANDS
                     .iter()

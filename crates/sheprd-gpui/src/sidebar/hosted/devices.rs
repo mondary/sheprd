@@ -309,6 +309,7 @@ impl SheprdWindow {
             "branch": workspace.branch,
             "child": child,
             "collapsed": place.group.as_ref().is_some_and(|key| place.collapsed.contains(key)),
+            "local_cwd": (place.index == 0 && !workspace.cwd.is_empty()).then_some(&workspace.cwd),
             "dirty": badge.as_ref().is_some_and(|badge| badge.dirty),
             "endpoint": place.endpoint.id,
             "focused": place.focused,

@@ -133,6 +133,10 @@ impl SheprdWindow {
         let font = &self.config.ui;
         let theme = &self.theme;
         let muted = rgb(theme.muted);
+        #[cfg(feature = "moonframe")]
+        let version = crate::luau_window::pk_version();
+        #[cfg(not(feature = "moonframe"))]
+        let version = crate::APP_VERSION;
         div()
             .debug_selector(|| "about".into())
             .flex()
@@ -161,7 +165,7 @@ impl SheprdWindow {
                 div()
                     .debug_selector(|| "about-version".into())
                     .text_color(muted)
-                    .child(fl!("about-version", version = crate::APP_VERSION)),
+                    .child(fl!("about-version", version = version)),
             )
             .children(self.render_about_dev(theme, cx))
             .child(
@@ -191,6 +195,9 @@ impl SheprdWindow {
                     // i18n: data
                     .child(self.about_link("about-repository", "GitHub", REPOSITORY)),
             )
+            .when(cfg!(feature = "moonframe"), |about| {
+                about.child(self.about_link("about-support", "Ko-fi", "https://ko-fi.com/pouark"))
+            })
             .child(
                 div()
                     .debug_selector(|| "about-copyright".into())
@@ -344,6 +351,9 @@ impl SheprdWindow {
         div()
             .id(id)
             .debug_selector(move || id.into())
+            .role(Role::Link)
+            .tab_index(0)
+            .focus_visible(|style| style.underline())
             .flex_none()
             .flex()
             .items_center()

@@ -27,6 +27,9 @@ impl SheprdWindow {
     ) -> Stateful<Div> {
         terminal
             .track_focus(&self.focus)
+            .when(self.focus.is_focused(window), |terminal| {
+                terminal.key_context("SheprdTerminalInput")
+            })
             .role(Role::Terminal)
             .aria_label(fl!("window-input-terminal"))
             // AccessKit maps Terminal to AXTextArea on macOS. SetValue makes

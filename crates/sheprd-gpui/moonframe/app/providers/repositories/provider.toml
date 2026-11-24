@@ -1,0 +1,4 @@
+# Local repositories and the selected checkout's details, as app.repositories.
+command = ["python3", "repositories.py"]
+kind    = "process"
+publish = "latest"

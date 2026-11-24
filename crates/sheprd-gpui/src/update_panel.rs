@@ -258,6 +258,26 @@ impl SheprdWindow {
         });
     }
 
+    #[cfg(feature = "moonframe")]
+    pub(crate) fn check_from_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.updater.state(), State::Disabled(_)) && APP_VERSION == "dev" {
+            // Dev builds check official releases through the read-only About panel.
+            self.open_about(window, cx);
+            if self.menu.page == Some(Page::About) {
+                self.about_official.start();
+                cx.notify();
+            }
+            return;
+        }
+        self.open_app_update(false, window, cx);
+        if self.menu.page == Some(Page::AppUpdate)
+            && matches!(self.updater.state(), State::Idle | State::Current | State::Error(_))
+        {
+            self.updater.check();
+            cx.notify();
+        }
+    }
+
     pub(super) fn render_app_update(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         let font = &self.config.ui;
         let theme = &self.theme;

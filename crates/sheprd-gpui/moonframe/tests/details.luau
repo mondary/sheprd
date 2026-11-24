@@ -57,10 +57,20 @@ return mod {
 			assert(opened() == visible and not status_toggle(), "native titlebar must own visibility")
 		end
 		app.sheprd.details_visible = nil
+		local bar = status.init(nil)
+		status.update(bar, "toggle-version")
+		local _, about = status.update(bar, "choose-version")
+		assert(about[1].msg.command == "about" and bar.choice == nil)
+		status.update(bar, "toggle-version")
+		status.update(bar, "move-version")
+		local _, check = status.update(bar, "choose-version")
+		assert(check[1].msg.check_for_updates == true and bar.choice == nil)
+		status.update(bar, "toggle-version")
+		local status_menu = status.view(bar, app)
 
 		local state = details.init(nil)
 		local page = details.view(state, app)
-		local pages = {}
+		local pages = { status_menu }
 		for _, pair in { { "Files", "entry.txt" }, { "Agents", "agent in repo" }, { "Git", "changed.txt" } } do
 			local tab = assert(control(page, pair[1]), "missing tab: " .. pair[1])
 			state = details.update(state, tab.msg) or state
@@ -81,6 +91,33 @@ return mod {
 			table.insert(pages, page)
 		end
 		assert(text(page, "No branch") and text(page, "History") and text(page, "first commit"), "incomplete Git page")
+		local workspace = app.sheprd.workspaces[1]
+		workspace.repo_key = nil
+		workspace.local_cwd = "/suite"
+		state = details.update(state, { topic = "provider/sheprd", value = app.sheprd })
+		local chrome = { path = "/suite/chrome", name = "chrome", branch = "main", dirty = false, count = 0 }
+		local mac = { path = "/suite/mac", name = "mac", branch = "dev", dirty = true, count = 1 }
+		local linux = { path = "/suite/linux", name = "linux", branch = "trunk", dirty = false, count = 0 }
+		app.repositories = { scope = "/suite", repos = { chrome, mac, linux }, selected = {
+			path = chrome.path, branch = chrome.branch, changes = {}, commits = {},
+		} }
+		page = details.view(state, app)
+		assert(text(page, "No uncommitted changes") and control(page, "chrome") and control(page, "linux"))
+		local next_state, sends = details.update(state, assert(control(page, "mac")).msg)
+		state = next_state
+		assert(sends[1].msg.repository == mac.path)
+		assert(text(details.view(state, app), "Reading repositories…"))
+		app.repositories.selected = {
+			path = mac.path, branch = mac.branch, dirty = true,
+			changes = { { path = "mac.txt", status = "M" } },
+			commits = { { sha = "def", parents = {}, subject = "mac commit" } },
+		}
+		page = details.view(state, app)
+		assert(text(page, "mac.txt") and text(page, "mac commit") and not text(page, "first commit"))
+		table.insert(pages, page)
+		workspace.local_cwd = "/different"
+		state = details.update(state, { topic = "provider/sheprd", value = app.sheprd })
+		assert(not text(details.view(state, app), "mac.txt"))
 		-- Hand all three views to Moonframe: invalid child properties are not errors until it reads the tree.
 		return ui.column(pages)
 	end,

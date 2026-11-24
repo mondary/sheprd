@@ -750,6 +750,9 @@ impl Render for CoreTerminalView {
             .pad(div())
             .id(SharedString::from(format!("core-terminal-{}", self.id)))
             .key_context("CoreTerminal")
+            .when(self.focus.is_focused(window), |root| {
+                root.key_context("CoreTerminal SheprdTerminalInput")
+            })
             .track_focus(&self.focus)
             .map(|root| self.accessible(root, window, cx))
             .flex()
