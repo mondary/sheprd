@@ -17,7 +17,6 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 | `mods/worktrees/main.luau` | The left pane's head and worktree rows, linked worktrees under their checkout, drawn in the sidebar layout Sheprd's config names (`layout = "orca"`, `compact`, `minimal`, ...) |
 | `mods/agents/main.luau` | The agents under the worktrees, in Sheprd's sort and the same layout |
 | `mods/details/main.luau` | Files, Git (changes above history), and Agents. Open the right pane from the title bar, or from Details in the status bar on hosts without a title-bar toggle. |
-| `mods/edge-light/main.luau` | A clockwise comet while working, paired amber pulses when blocked, green waves when done, and a quiet breathing line when idle |
 | `mods/status/main.luau` | The status bar |
 | `components/sheprd-*.luau` | What the worktrees and agents share: a row highlighted as the layout marks the selected one, the status dot, and the section names |
 | `style.luau` | The hover looks, for every mod |
@@ -30,11 +29,18 @@ Worktree rows, collapsed tiles and both Agents lists share the Orca indicator.
 stationary. The marks use `app.sheprd_theme.status` and need no image files.
 The classic window's `status_icons` selector is not exposed to Moonframe.
 
-The edge light reads `agent_status` from the **focused** entry in
-`app.sheprd.workspaces`, just like its sidebar dot. No focus or an unknown
-status leaves the window clear. GPUI plays the thin WebP strips directly;
-there is no polling provider. To change the motion, edit and run
-`scripts/generate-edge-light.py` (Pillow with WebP support).
+The **window edge light** follows the same focused worktree as its sidebar dot.
+Working sends a comet clockwise; blocked gives two pulses; done sends two waves;
+idle breathes quietly. No focused worktree or an unknown status leaves the window clear.
+
+In **Settings → Indicators → Edge Lighting**, pick a swatch, enter a hex color,
+or use **Auto (status)** to restore the status colors. Width is 1–12 logical
+pixels (default 5); trail length is 5–50% of the perimeter (default 16%).
+The controls save as you change them. The native renderer in
+`crates/sheprd-gpui/src/window/edge_light.rs` follows both sides of each macOS
+corner and uses square corners in fullscreen. It needs no images or polling
+provider. Use a build of this checkout: copying Luau alone cannot add native
+Settings controls to a previously installed binary.
 
 ## Changing it
 

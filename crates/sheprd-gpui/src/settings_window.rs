@@ -185,7 +185,7 @@ struct SettingsWindow {
     /// A slider being dragged, or released and saving, that writes only on
     /// release.
     number_preview: Option<inputs::NumberPreview>,
-    /// The host colour being typed as hex, if any.
+    /// The colour being typed as hex, if any.
     hex_edit: Option<sidebar::HexEdit>,
     #[cfg(windows)]
     launch_at_login: launch_at_login::LaunchAtLogin,

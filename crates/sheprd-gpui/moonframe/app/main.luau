@@ -139,7 +139,7 @@ return mod {
 			height = 780,
 			left = 300,
 			status_bar = 24,
-			titlebar = 0,
+			titlebar = false,
 		}
 	end,
 
@@ -155,7 +155,7 @@ return mod {
 			state.height = msg.height or state.height
 			state.left = msg.left
 			state.status_bar = msg.status_bar
-			state.titlebar = msg.titlebar or 0
+			state.titlebar = msg.titlebar or false
 		elseif type(msg) == "table" and msg.sidebar_width then
 			-- The column's edge: its handle here, the width in Sheprd.
 			-- Returning a table would replace the state, so the drag goes on
@@ -189,6 +189,15 @@ return mod {
 		local theme = app.sheprd_theme or {}
 		local sheprd = app.sheprd or {}
 		local pending = git_pending(sheprd, app.gitcounts, theme)
+		-- A host with a separate title-bar region reports its width, even
+		-- when zero. On older hosts an unknown region creates a second main
+		-- view (and a second window overlay).
+		local titlebar = state.titlebar and ui.row {
+			width = math.max(state.titlebar, 1),
+			height = state.header,
+			gap = "none",
+			region "titlebar",
+		}
 		-- The worktree and agent lists, unless a page or the rail takes
 		-- their place.
 		local lists = not sheprd.section and sheprd.sidebar_visible ~= false
@@ -303,30 +312,16 @@ return mod {
 										ui.mount "turns",
 									}
 									else false,
-								-- Drawn before Sheprd has measured it, so it can. The
-								-- git state sits just before Sheprd's own title bar end,
-								-- in the room the tabs leave free.
-								if pending
+								if pending or titlebar
 									then ui.row {
 										float = { top = 0, right = 0 },
 										height = state.header,
 										gap = "none",
 										align = "center",
 										pending,
-										ui.row {
-											width = math.max(state.titlebar, 1),
-											height = state.header,
-											gap = "none",
-											region "titlebar",
-										},
+										titlebar,
 									}
-									else ui.row {
-										float = { top = 0, right = 0 },
-										width = math.max(state.titlebar, 1),
-										height = state.header,
-										gap = "none",
-										region "titlebar",
-									},
+									else false,
 							},
 						},
 						-- Hosts with a titlebar toggle own visibility, including false.
@@ -342,7 +337,6 @@ return mod {
 			},
 			-- A worktree build's strip, across the window's foot.
 			ui.mount "build",
-			ui.mount "edge-light",
 		}
 	end,
 }

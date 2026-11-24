@@ -26,6 +26,7 @@ mod daemon;
 mod daytona;
 mod devices;
 mod diagnostic;
+mod edge_light;
 mod edit;
 mod error;
 pub(crate) mod favorite_themes;
@@ -83,6 +84,7 @@ pub(crate) use daemon::daemon_config_path;
 use daemon::{Daemon, daemon_settings};
 use devices::MAX_DEVICES;
 pub(crate) use devices::{DeviceSettings, KeybindingSource};
+pub use edge_light::EdgeLight;
 pub(crate) use edit::{Layer, parse_value};
 pub(crate) use error::{Error, ThemeParseError};
 pub use features::{Feature, Features};
@@ -205,6 +207,7 @@ pub struct Config {
     pub daytona: DaytonaConfig,
     /// Per saved device, by catalog profile ID.
     pub(crate) devices: BTreeMap<String, DeviceSettings>,
+    pub edge_light: EdgeLight,
     /// A bar on the leading edge of each working, blocked, or done row,
     /// whichever status icons are drawn.
     pub edge_rail: bool,
@@ -442,6 +445,7 @@ impl Default for Config {
             contrast: Contrast::default(),
             daytona: DaytonaConfig::default(),
             devices: BTreeMap::new(),
+            edge_light: EdgeLight::default(),
             edge_rail: false,
             editor_command: None,
             favorite_themes: Vec::new(),
@@ -541,6 +545,7 @@ struct Settings {
     contrast: Contrast,
     daytona: DaytonaConfig,
     devices: BTreeMap<String, DeviceSettings>,
+    edge_light: EdgeLight,
     edge_rail: Option<bool>,
     editor_command: Option<crate::editor::EditorCommand>,
     favorite_themes: Vec<String>,
@@ -928,6 +933,7 @@ impl Config {
         config.ssh = settings.ssh;
         let (status_icons, legacy_rail) = status_icons::SavedIcons::resolve(settings.status_icons);
         config.status_icons = status_icons;
+        config.edge_light = settings.edge_light;
         config.edge_rail = settings.edge_rail.unwrap_or(legacy_rail);
         config.zen = settings.zen.try_into()?;
         config.undo_close_tab = settings.undo_close_tab.try_into()?;
