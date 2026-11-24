@@ -17,12 +17,19 @@ Everything around the terminals is Luau in `crates/sheprd-gpui/moonframe/app`:
 | `mods/worktrees/main.luau` | The left pane's head and worktree rows, linked worktrees under their checkout, drawn in the sidebar layout Sheprd's config names (`layout = "orca"`, `compact`, `minimal`, ...) |
 | `mods/agents/main.luau` | The agents under the worktrees, in Sheprd's sort and the same layout |
 | `mods/details/main.luau` | Files, Git (changes above history), and Agents. Open the right pane from the title bar, or from Details in the status bar on hosts without a title-bar toggle. |
+| `mods/edge-light/main.luau` | A clockwise comet while working, paired amber pulses when blocked, green waves when done, and a quiet breathing line when idle |
 | `mods/status/main.luau` | The status bar |
 | `components/sheprd-*.luau` | What the worktrees and agents share: a row highlighted as the layout marks the selected one, the status dot, and the section names |
 | `style.luau` | The hover looks, for every mod |
 
 The terminals, tabs, and pages stay one Rust view, placed with
 `ui.view { name = "sheprd", id = "main", props = { region = "main" } }`.
+
+The edge light reads `agent_status` from the **focused** entry in
+`app.sheprd.workspaces`, just like its sidebar dot. No focus or an unknown
+status leaves the window clear. GPUI plays the thin WebP strips directly;
+there is no polling provider. To change the motion, edit and run
+`scripts/generate-edge-light.py` (Pillow with WebP support).
 
 ## Changing it
 

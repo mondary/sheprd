@@ -342,6 +342,7 @@ return mod {
 			},
 			-- A worktree build's strip, across the window's foot.
 			ui.mount "build",
+			ui.mount "edge-light",
 		}
 	end,
 }
