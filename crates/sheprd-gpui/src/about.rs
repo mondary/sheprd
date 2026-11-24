@@ -213,6 +213,7 @@ impl SheprdWindow {
                     .child(self.about_link("about-repository", "GitHub", REPOSITORY)),
             )
             .when(cfg!(feature = "moonframe"), |about| {
+                // i18n: data
                 about.child(self.about_link("about-support", "Ko-fi", "https://ko-fi.com/pouark"))
             })
             .child(

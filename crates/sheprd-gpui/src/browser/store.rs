@@ -7,6 +7,7 @@ use crate::{reorder::Beside, state_file};
 use gpui::{App, Global};
 use serde::{Deserialize, Serialize};
 use sheprd_session::SavedWorkspace;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 mod closed_projects;
@@ -292,6 +293,8 @@ pub(crate) struct Store {
     pub(super) workspaces: Vec<SavedWorkspace>,
     /// Herdr 1 projects preserved after their final tab closes.
     pub(super) closed_projects: Vec<ClosedProject>,
+    /// Closes asked for from a menu: their folders never come back as rows.
+    pub(super) suppressed: HashSet<(String, String)>,
     closed_project_writer: Option<state_file::Writer<closed_projects::Saved>>,
     _closed_project_owner: Option<std::fs::File>,
     /// The last kept workspace number handed out this run.
@@ -437,6 +440,7 @@ impl Store {
             workspaces: Vec::new(),
             closed_projects: Vec::new(),
             closed_project_writer: None,
+            suppressed: HashSet::new(),
             _closed_project_owner: None,
             last_kept: 0,
             next,

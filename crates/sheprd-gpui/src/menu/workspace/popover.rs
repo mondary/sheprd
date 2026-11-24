@@ -33,6 +33,7 @@ impl Label {
     pub(crate) const NOTE: Self = Self::new("worktree-popover-note");
     pub(crate) const OPEN_WORKTREE: Self = Self::new("worktree-popover-open-worktree");
     pub(crate) const ORCHESTRATOR: Self = Self::new("worktree-popover-orchestrator");
+    pub(crate) const REMOVE_PROJECT: Self = Self::new("worktree-popover-remove-project");
     pub(crate) const RENAME: Self = Self::new("worktree-popover-rename");
     #[cfg(target_os = "linux")]
     pub(crate) const REVEAL_IN_FILE_MANAGER: Self =

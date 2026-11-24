@@ -118,3 +118,21 @@ fn closed_projects_survive_store_reload_in_their_own_state_file() {
         "/work/Chrome/project"
     );
 }
+
+#[test]
+fn an_explicit_close_removes_the_row_for_good() {
+    let scope = Scope::local("/tmp/herdr.sock".as_ref());
+    let mut store = Store::default();
+    store.remember_closed_project(&scope, &workspace("/work/Chrome/project", "Project"));
+    let id = store.closed_projects(&scope).next().unwrap().id.clone();
+    assert!(store.forget_closed_project(&scope, &id));
+    assert_eq!(store.closed_projects(&scope).count(), 0);
+
+    store.forget_closed_project_path(&scope, "/work/Chrome/project");
+    store.remember_closed_project(&scope, &workspace("/work/Chrome/project", "Project"));
+    assert_eq!(
+        store.closed_projects(&scope).count(),
+        0,
+        "a folder closed from its menu never comes back as a row"
+    );
+}

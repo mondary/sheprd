@@ -1,4 +1,4 @@
-# SheprdPK — version 2026.11.07
+# SheprdPK — version 2026.11.08
 
 [Français et documentation amont](README.md) · [Fork changelog](docs/pk/CHANGELOG.md)
 

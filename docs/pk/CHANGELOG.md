@@ -2,6 +2,12 @@
 
 Local fork versions; upstream release notes are generated separately.
 
+## [2026.11.08] - 2026-11-24
+
+### Fixed
+
+- Closing a project from its menu removes its row from Spaces, and a retained project row offers "Remove from list".
+
 ## [2026.11.07] - 2026-11-24
 
 ### Fixed
