@@ -759,7 +759,12 @@ impl SheprdWindow {
             return vec![];
         };
         if target.retained {
-            return self.reveal_item().into_iter().collect();
+            let mut items = Vec::new();
+            if let Some(item) = self.reveal_item() {
+                items.push(item);
+            }
+            items.push((WorkspaceMenuAction::RemoveProject, Label::REMOVE_PROJECT));
+            return items;
         }
         if target.keeper == sheprd_session::Keeper::App {
             // Scripts run on the shown host, so only for a workspace it
@@ -1037,6 +1042,36 @@ impl SheprdWindow {
         actions
     }
 
+    /// The rows an explicit close would leave behind: the closed workspaces'
+    /// projects are forgotten and never retained, so the close removes them
+    /// from Spaces. Opening the folder again brings its row back.
+    fn drop_closed_rows(&self, cx: &mut Context<Self>) {
+        let Some(target) = &self.menu.target else {
+            return;
+        };
+        let endpoint = &self.endpoints[self.selected_endpoint];
+        if endpoint.id != crate::endpoint::LOCAL || endpoint.connection.target.is_remote() {
+            return;
+        }
+        let scope = crate::browser::scope(endpoint);
+        let mut cwds: Vec<String> = Vec::new();
+        if let Some(snapshot) = &self.live.snapshot {
+            for workspace in &snapshot.workspaces {
+                if target.close_members.contains(&workspace.workspace_id)
+                    && !workspace.new_workspace_cwd.is_empty()
+                    && !cwds.contains(&workspace.new_workspace_cwd)
+                {
+                    cwds.push(workspace.new_workspace_cwd.clone());
+                }
+            }
+        }
+        crate::browser::Store::update(cx, |store| {
+            for cwd in &cwds {
+                store.forget_closed_project_path(&scope, cwd);
+            }
+        });
+    }
+
     pub(super) fn activate_workspace_menu(
         &mut self,
         action: WorkspaceMenuAction,
@@ -1044,6 +1079,17 @@ impl SheprdWindow {
         cx: &mut Context<Self>,
     ) {
         match action {
+            WorkspaceMenuAction::RemoveProject => {
+                if let Some(target) = &self.menu.target {
+                    let endpoint = &self.endpoints[self.selected_endpoint];
+                    let scope = crate::browser::scope(endpoint);
+                    let id = target.id.clone();
+                    crate::browser::Store::update(cx, |store| {
+                        store.forget_closed_project(&scope, &id);
+                    });
+                }
+                self.dismiss_menu(window, cx);
+            }
             WorkspaceMenuAction::Dialog(action) => self.open_workspace_dialog(action, window, cx),
             WorkspaceMenuAction::Collapse | WorkspaceMenuAction::Expand => {
                 self.toggle_selected_group(cx)

@@ -12,6 +12,7 @@ worktree-popover-unmute-button = Unmute
 worktree-popover-fan-out = Fan out prompt...
 # Opens the comparison of a fan-out already launched.
 worktree-popover-fan-out-comparison = Fan-out comparison...
+worktree-popover-remove-project = Remove from list
 worktree-popover-rename = Rename
 # Focuses the copy this workspace was teleported to.
 worktree-popover-go-to-teleported = Go to teleported copy

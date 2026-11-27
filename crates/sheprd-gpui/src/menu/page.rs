@@ -183,6 +183,9 @@ pub(crate) enum WorkspaceMenuAction {
     GoToTeleported,
     /// Forget that this checkout's work was teleported away.
     ClearTeleported,
+    /// Forget a retained project: its row leaves Spaces until its folder is
+    /// opened again.
+    RemoveProject,
     Checkpoints,
     /// Send one prompt to several agents, or reopen their comparison.
     FanOut,
@@ -316,6 +319,7 @@ impl WorkspaceMenuAction {
             Self::Teleport | Self::GoToTeleported => "icons/teleport.svg",
             Self::TeleportBack => "icons/teleport-back.svg",
             Self::ClearTeleported => "icons/close.svg",
+            Self::RemoveProject => "icons/x.svg",
             Self::Checkpoints => "icons/refresh.svg",
             Self::FanOut => "icons/fan-out.svg",
             Self::Orchestrator => "icons/github.svg",

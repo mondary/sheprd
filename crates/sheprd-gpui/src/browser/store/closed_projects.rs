@@ -69,6 +69,12 @@ impl Store {
 
     /// Retains a local Herdr workspace after its last terminal tab closes.
     pub(crate) fn remember_closed_project(&mut self, scope: &Scope, workspace: &Workspace) {
+        if self
+            .suppressed
+            .remove(&(scope.as_str().to_owned(), workspace.cwd.clone()))
+        {
+            return;
+        }
         if workspace.cwd.is_empty()
             || workspace.cwd.len() > sheprd_session::saved::MAX_CWD_BYTES
             || !Path::new(&workspace.cwd).is_absolute()
@@ -108,6 +114,37 @@ impl Store {
             self.closed_projects.remove(0);
         }
         self.closed_projects.push(closed);
+        self.persist_closed_projects();
+    }
+
+    /// Forgets a retained project by its sidebar id, so its row leaves.
+    pub(crate) fn forget_closed_project(&mut self, scope: &Scope, id: &str) -> bool {
+        let Some(at) = self
+            .closed_projects
+            .iter()
+            .position(|project| project.scope == scope.as_str() && project.id == id)
+        else {
+            return false;
+        };
+        self.closed_projects.remove(at);
+        self.persist_closed_projects();
+        true
+    }
+
+    /// Forgets the retained project of a folder and keeps the close in
+    /// flight from remembering it again: an explicit close leaves no row.
+    pub(crate) fn forget_closed_project_path(&mut self, scope: &Scope, cwd: &str) {
+        let before = self.closed_projects.len();
+        self.closed_projects
+            .retain(|project| project.scope != scope.as_str() || project.cwd != cwd);
+        self.suppressed
+            .insert((scope.as_str().to_owned(), cwd.to_owned()));
+        if self.closed_projects.len() != before {
+            self.persist_closed_projects();
+        }
+    }
+
+    fn persist_closed_projects(&self) {
         if !self.quitting
             && let Some(writer) = &self.closed_project_writer
         {
