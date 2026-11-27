@@ -5,6 +5,7 @@ pub(crate) struct WorkspaceTarget {
     pub(in crate::menu) boot_id: String,
     pub(in crate::menu) id: String,
     pub(in crate::menu) label: String,
+    #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
     pub(in crate::menu) cwd: String,
     pub(in crate::menu) worktree: Option<ClientShellWorktree>,
     pub(in crate::menu) close_members: Vec<String>,
