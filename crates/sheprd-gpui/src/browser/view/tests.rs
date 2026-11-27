@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 #[test]
 fn long_titles_are_shortened_on_a_character_boundary() {
     assert_eq!(super::tab_label("Example Domain"), "Example Domain");

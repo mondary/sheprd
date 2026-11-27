@@ -85,6 +85,7 @@ impl SheprdWindow {
     }
 
     /// Reveals a workspace's folder in Finder or the system file manager.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub(super) fn reveal_workspace_target(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(target) = &self.menu.target {
             crate::settings_window::reveal_path(std::path::PathBuf::from(&target.cwd), cx);
